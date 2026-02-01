@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>HeroSchema</title>
+
+    <!-- BOOTSTRAP -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+
+<!-- HEADER -->
+<div th:replace="fragments/header :: header"></div>
+
+<div class="container-fluid">
+    <div class="row vh-100">
+
+        <!-- SIDEBAR -->
+        <aside class="col-3 border-end p-2 overflow-auto">
+
+            <div class="fw-bold text-uppercase small text-muted px-2 mb-2">
+                Schemas
+            </div>
+
+            <div class="accordion accordion-flush" id="schemaMenu">
+
+                <div class="accordion-item"
+                     th:each="schemaName : ${schemas}">
+
+                    <h2 class="accordion-header">
+                        <button
+                                class="accordion-button py-2"
+                                th:classappend="${schemaName == selectedSchema} ? '' : 'collapsed'"
+                                type="button"
+                                data-bs-toggle="collapse"
+                                th:data-bs-target="'#schema-' + ${schemaName}">
+                            <span th:text="${schemaName}">public</span>
+                        </button>
+                    </h2>
+
+                    <div class="accordion-collapse collapse"
+                         th:id="'schema-' + ${schemaName}"
+                         th:classappend="${schemaName == selectedSchema} ? ' show'">
+
+                        <div class="list-group list-group-flush">
+
+                            <a class="list-group-item list-group-item-action py-1"
+                               th:each="tableName : ${tablesBySchema[schemaName]}"
+                               th:text="${tableName}"
+                               th:href="@{/schemas(schema=${schemaName}, table=${tableName})}"
+                               th:classappend="${tableName == selectedTable} ? ' active'">
+                            </a>
+
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="col-9 p-4 overflow-auto">
+
+            <div th:if="${columns == null}">
+                <h4 class="text-muted">
+                    Selecione uma tabela
+                </h4>
+                <p class="text-muted">
+                    Escolha um schema e uma tabela no menu lateral.
+                </p>
+            </div>
+
+            <div th:if="${columns != null}">
+                <h4>
+                    <span th:text="${selectedSchema}"></span>.
+                    <span th:text="${selectedTable}"></span>
+                </h4>
+
+                <table class="table table-sm table-hover mt-3">
+                    <thead>
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Nullable</th>
+                        <th>Default</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="col : ${columns}">
+                        <td th:text="${col.name}"></td>
+                        <td th:text="${col.type}"></td>
+                        <td th:text="${col.nullable}"></td>
+                        <td th:text="${col.defaultValue}"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </main>
+
+    </div>
+</div>
+
+</body>
+</html>

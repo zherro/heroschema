@@ -1,0 +1,32 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="fw-bold text-uppercase small text-muted px-2 mb-2">
+        Schemas
+    </div>
+
+    <div class="accordion accordion-flush" id="schemaMenu">
+        <div class="accordion-item" th:each="schema : ${schemaItems}">
+            <h2 class="accordion-header">
+                <button
+                        class="accordion-button py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        th:data-bs-target="'#schema-' + ${schema.name}">
+                    <span th:text="${schema.name}">public</span>
+                </button>
+            </h2>
+
+              <div class="accordion-collapse collapse show"
+                  th:id="'schema-' + ${schema.name}">
+
+                <div class="list-group list-group-flush">
+                    <a class="list-group-item list-group-item-action py-1"
+                       th:each="tableName : ${schema.tables}"
+                       th:text="${tableName}"
+                       th:href="@{/schemas(schema=${schema.name}, table=${tableName})}"
+                       th:classappend="${tableName == selectedTable} ? ' active'">
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

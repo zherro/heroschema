@@ -1,0 +1,36 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div th:if="${columns} == null">
+        <h4 class="text-muted">Selecione uma tabela</h4>
+        <p class="text-muted">
+            Escolha um schema e uma tabela no menu lateral.
+        </p>
+    </div>
+
+    <div th:if="${columns} != null">
+        <h4>
+            <span th:text="${selectedSchema}"></span>.
+            <span th:text="${selectedTable}"></span>
+        </h4>
+
+        <table class="table table-sm table-hover mt-3">
+            <thead>
+            <tr>
+                <th>Column</th>
+                <th>Type</th>
+                <th>Nullable</th>
+                <th>Default</th>
+                <th>Comment</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="col : ${columns}">
+                <td th:text="${col.name}"></td>
+                <td th:text="${col.type}"></td>
+                <td th:text="${col.nullable}"></td>
+                <td th:text="${col.defaultValue}"></td>
+                <td th:text="${col.comment}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

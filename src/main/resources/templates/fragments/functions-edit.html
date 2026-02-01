@@ -1,0 +1,56 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <h3>Function</h3>
+
+    <div class="mb-3">
+        <a class="btn btn-outline-secondary btn-sm" th:href="@{/functions(schema=${fn.schema})}">Back</a>
+        <span class="badge bg-secondary me-2" th:text="${fn.schema}">public</span>
+        <strong th:text="${fn.name}">my_function</strong>
+    </div>
+
+    <form method="post" th:action="@{/functions/edit}">
+        <input type="hidden" name="schema" th:value="${fn.schema}">
+        <input type="hidden" name="name" th:value="${fn.name}">
+
+        <div class="mb-3">
+            <label class="form-label">Definition (CREATE OR REPLACE FUNCTION ...)</label>
+            <textarea name="definition" class="form-control sql-editor" rows="48"
+                      th:text="${fn.definition}"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between">
+            <a class="btn btn-outline-secondary btn-sm" th:href="@{/functions(schema=${fn.schema})}">Back</a>
+            <button class="btn btn-primary btn-sm" type="submit">
+                Save
+            </button>
+        </div>
+
+        <p class="text-muted mt-2 small">
+            Ao salvar, a definição será enviada como SQL para o banco
+            (CREATE OR REPLACE FUNCTION). Isso altera apenas a função,
+            não modifica dados das tabelas.
+        </p>
+    </form>
+
+    <hr class="my-3"/>
+
+    <form class="row g-2 align-items-end mb-2" method="get" th:action="@{/functions/download}">
+        <input type="hidden" name="schema" th:value="${fn.schema}">
+        <input type="hidden" name="name" th:value="${fn.name}">
+        <div class="col-auto">
+            <div class="form-check form-check-inline small">
+                <input class="form-check-input" type="checkbox" name="noSchema" value="true" id="noSchema">
+                <label class="form-check-label" for="noSchema">Sem schema no SQL</label>
+            </div>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Download SQL</button>
+        </div>
+    </form>
+
+    <form class="mt-1" method="post" th:action="@{/functions/delete}"
+          onsubmit="return confirm('Tem certeza que deseja deletar esta function?');">
+        <input type="hidden" name="schema" th:value="${fn.schema}">
+        <input type="hidden" name="name" th:value="${fn.name}">
+        <button class="btn btn-outline-danger btn-sm" type="submit">Delete function</button>
+    </form>
+</div>

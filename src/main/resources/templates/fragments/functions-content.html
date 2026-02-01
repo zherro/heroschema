@@ -1,0 +1,65 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Functions</h3>
+        <a class="btn btn-sm btn-primary" th:href="@{/functions/new}">New function</a>
+    </div>
+
+    <form class="row g-2 mb-3" method="get" th:action="@{/functions}">
+        <div class="col-auto">
+            <label class="form-label small mb-1">Schema</label>
+            <select name="schema" class="form-select form-select-sm">
+                    <option value="" th:selected="${selectedSchema == null or selectedSchema == ''}">All</option>
+                <option th:each="s : ${schemas}"
+                        th:value="${s}"
+                        th:text="${s}"
+                        th:selected="${s == selectedSchema}"></option>
+            </select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1">Search</label>
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="name, args, comment"
+                   th:value="${q}">
+        </div>
+        <div class="col-auto align-self-end">
+            <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Schema</th>
+                <th>Name</th>
+                <th>Arguments</th>
+                <th>Return</th>
+                <th>Language</th>
+                <th>Comment</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="fn : ${functions}">
+                <td th:text="${fn.schema}"></td>
+                <td>
+                    <span th:text="${fn.name}"></span>
+                </td>
+                <td th:text="${fn.arguments}"></td>
+                <td th:text="${fn.returnType}"></td>
+                <td th:text="${fn.language}"></td>
+                <td th:text="${fn.comment}"></td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary"
+                       th:href="@{/functions/edit(schema=${fn.schema}, name=${fn.name})}">
+                        🔧
+                    </a>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div th:if="${#lists.isEmpty(functions)}">
+        <p class="text-muted mt-3">Nenhuma function encontrada para este filtro.</p>
+    </div>
+</div>
