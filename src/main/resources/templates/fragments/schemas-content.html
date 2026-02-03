@@ -7,10 +7,24 @@
     </div>
 
     <div th:if="${columns} != null">
-        <h4>
-            <span th:text="${selectedSchema}"></span>.
-            <span th:text="${selectedTable}"></span>
-        </h4>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h4 class="mb-0">
+                <span th:text="${selectedSchema}"></span>.
+                <span th:text="${selectedTable}"></span>
+            </h4>
+            <div>
+                <a class="btn btn-sm btn-outline-secondary me-2"
+                   th:href="@{/schemas/edit(schema=${selectedSchema}, table=${selectedTable})}">
+                    Edit table
+                </a>
+                <form class="d-inline" method="post" th:action="@{/schemas/delete}"
+                      onsubmit="return confirm('Tem certeza que deseja deletar esta tabela?');">
+                    <input type="hidden" name="schema" th:value="${selectedSchema}">
+                    <input type="hidden" name="table" th:value="${selectedTable}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete table</button>
+                </form>
+            </div>
+        </div>
 
         <table class="table table-sm table-hover mt-3">
             <thead>
@@ -20,15 +34,24 @@
                 <th>Nullable</th>
                 <th>Default</th>
                 <th>Comment</th>
+                <th class="text-center">Unique</th>
+                <th>FK</th>
             </tr>
             </thead>
             <tbody>
             <tr th:each="col : ${columns}">
-                <td th:text="${col.name}"></td>
+                <td>
+                    <span th:text="${col.name}"></span>
+                    <span class="badge bg-primary ms-1" th:if="${col.primaryKey}">PK</span>
+                </td>
                 <td th:text="${col.type}"></td>
                 <td th:text="${col.nullable}"></td>
                 <td th:text="${col.defaultValue}"></td>
                 <td th:text="${col.comment}"></td>
+                <td class="text-center">
+                    <span class="badge bg-secondary" th:if="${col.unique}">UQ</span>
+                </td>
+                <td class="small text-muted" th:text="${col.fkRef}"></td>
             </tr>
             </tbody>
         </table>

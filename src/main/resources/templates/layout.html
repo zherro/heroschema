@@ -8,6 +8,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- jQuery + Select2 for searchable selects (used in FK selectors) -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
     <!-- CodeMirror (SQL editor) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material.min.css">
@@ -17,6 +22,28 @@
     <style>
         .CodeMirror {
             height: 70vh;
+        }
+
+        /* Ajustes visuais para Select2 com tema Bootstrap 5, alinhado com form-select-sm */
+        .select2-container--bootstrap-5 .select2-selection--single {
+            height: calc(1.5em + .5rem + 2px);
+            padding: 0.125rem 0.5rem;
+            font-size: .875rem;
+            line-height: 1.5;
+        }
+
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+            padding-right: 1.5rem;
+            padding-left: 0;
+        }
+
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+            height: 100%;
+            right: 0.25rem;
+        }
+
+        .select2-container--bootstrap-5 .select2-selection {
+            border-radius: 0.2rem;
         }
     </style>
 </head>
@@ -37,6 +64,12 @@
 
         <!-- MAIN -->
         <main class="p-4" th:class="${sidebar} != null ? 'col-9 p-4' : 'col-12 p-4'">
+            <div th:if="${message} != null" class="alert alert-success py-2 px-3 small mb-3">
+                <span th:text="${message}"></span>
+            </div>
+            <div th:if="${error} != null" class="alert alert-danger py-2 px-3 small mb-3">
+                <span th:text="${error}"></span>
+            </div>
             <div th:replace="~{${content}}"></div>
         </main>
 
@@ -55,6 +88,183 @@
                 });
             });
         }
+
+        // Helper: suggested defaults per type
+        function isBooleanType(t) {
+            if (!t) return false;
+            t = t.toLowerCase();
+            return t.indexOf('bool') !== -1;
+        }
+
+        function isTimestampType(t) {
+            if (!t) return false;
+            t = t.toLowerCase();
+            return t.indexOf('timestamp') !== -1 || t.indexOf('date') !== -1 || t.indexOf('time') !== -1;
+        }
+
+        function isNumericType(t) {
+            if (!t) return false;
+            t = t.toLowerCase();
+            return t.indexOf('int') !== -1 || t.indexOf('numeric') !== -1 || t.indexOf('decimal') !== -1 || t.indexOf('double') !== -1 || t.indexOf('real') !== -1;
+        }
+
+        // When clicking on a default suggestion, fill the default input according to column type
+        document.body.addEventListener('click', function (e) {
+            var target = e.target;
+            if (!target.classList.contains('default-suggestion')) {
+                return;
+            }
+
+            var kind = target.getAttribute('data-default-kind');
+            var explicit = target.getAttribute('data-default-value');
+
+            var tr = target.closest('tr');
+            if (!tr) return;
+
+            var typeSelect = tr.querySelector('select[name$=".type"]');
+            var defaultInput = tr.querySelector('input[name$=".defaultValue"]');
+            if (!defaultInput) return;
+
+            var type = typeSelect ? typeSelect.value : '';
+            var value = explicit;
+
+            if (!value) {
+                if (kind === 'timestamp') {
+                    value = 'CURRENT_TIMESTAMP';
+                } else if (kind === 'boolean') {
+                    value = isBooleanType(type) ? 'true' : 'true';
+                } else if (kind === 'numeric') {
+                    value = isNumericType(type) ? '0' : '0';
+                } else if (kind === 'text') {
+                    value = "''";
+                }
+            }
+
+            if (value) {
+                defaultInput.value = value;
+            }
+        });
+
+        // Initialize searchable selects for FK (schema/table/column)
+        function initFkSelects() {
+            if (!window.jQuery || !jQuery.fn.select2) {
+                return;
+            }
+
+            // Apply Select2 to all FK selects (existing + newly added rows)
+            jQuery('.fk-select').each(function () {
+                var $sel = jQuery(this);
+                if ($sel.data('select2')) {
+                    return;
+                }
+                $sel.select2({
+                    theme: 'bootstrap-5',
+                    width: 'style',
+                    allowClear: true,
+                    placeholder: $sel.find('option[value=""]').text() || ''
+                });
+            });
+
+            // Bind change handlers only once
+            if (window.__fkHandlersInitialized) {
+                return;
+            }
+            window.__fkHandlersInitialized = true;
+
+            // Load tables when schema changes
+            jQuery(document).on('change', '.fk-schema-select', function () {
+                var $schemaSel = jQuery(this);
+                var schema = $schemaSel.val();
+                var $tr = $schemaSel.closest('tr');
+                var $tableSel = $tr.find('.fk-table-select');
+                var $columnSel = $tr.find('.fk-column-select');
+
+                $tableSel.empty().append(new Option('table', '', false, false)).trigger('change');
+                $columnSel.empty().append(new Option('column', '', false, false)).trigger('change');
+
+                if (!schema) return;
+
+                jQuery.getJSON('/schemas/fk/tables', {schema: schema})
+                    .done(function (data) {
+                        data.forEach(function (t) {
+                            $tableSel.append(new Option(t, t, false, false));
+                        });
+                    });
+            });
+
+            // Load columns when table changes
+            jQuery(document).on('change', '.fk-table-select', function () {
+                var $tableSel = jQuery(this);
+                var table = $tableSel.val();
+                var $tr = $tableSel.closest('tr');
+                var $schemaSel = $tr.find('.fk-schema-select');
+                var schema = $schemaSel.val();
+                var $columnSel = $tr.find('.fk-column-select');
+
+                $columnSel.empty().append(new Option('column', '', false, false)).trigger('change');
+
+                if (!schema || !table) return;
+
+                jQuery.getJSON('/schemas/fk/columns', {schema: schema, table: table})
+                    .done(function (data) {
+                        data.forEach(function (c) {
+                            $columnSel.append(new Option(c, c, false, false));
+                        });
+                    });
+            });
+        }
+
+        initFkSelects();
+
+        // New column button: clone template row and append to table body
+        var addBtn = document.getElementById('add-column-btn');
+        var tbody = document.getElementById('columns-body');
+        var tpl = document.getElementById('column-row-template');
+        if (addBtn && tbody && tpl) {
+            var nextIndex = parseInt(tbody.getAttribute('data-next-index') || '0', 10);
+            addBtn.addEventListener('click', function () {
+                var html = tpl.textContent;
+                if (!html) return;
+                html = html.replace(/__INDEX__/g, String(nextIndex));
+                nextIndex++;
+                tbody.setAttribute('data-next-index', String(nextIndex));
+
+                var temp = document.createElement('tbody');
+                temp.innerHTML = html.trim();
+                var newRow = temp.firstElementChild;
+                if (newRow) {
+                    tbody.appendChild(newRow);
+                }
+
+                // Re-init FK selects (Select2) and keep everything consistent
+                if (typeof jQuery !== 'undefined') {
+                    initFkSelects();
+                }
+            });
+        }
+
+        // Index edit button: load existing index data into the "New index" form
+        document.body.addEventListener('click', function (e) {
+            var btn = e.target.closest && e.target.closest('.index-edit-btn');
+            if (!btn) return;
+
+            var name = btn.getAttribute('data-index-name') || '';
+            var cols = btn.getAttribute('data-index-columns') || '';
+            var unique = btn.getAttribute('data-index-unique') === 'true';
+            var where = btn.getAttribute('data-index-where') || '';
+
+            var nameInput = document.querySelector('input[name="newIndexName"]');
+            var colsInput = document.querySelector('input[name="newIndexColumns"]');
+            var uniqueInput = document.querySelector('input[name="newIndexUnique"]');
+            var whereInput = document.querySelector('input[name="newIndexWhere"]');
+            var editOriginalInput = document.querySelector('input[name="editIndexOriginalName"]');
+
+            if (nameInput) nameInput.value = name;
+            if (colsInput) colsInput.value = cols || '';
+            if (uniqueInput) uniqueInput.checked = !!unique;
+            if (whereInput) whereInput.value = where || '';
+            if (editOriginalInput) editOriginalInput.value = name;
+        });
     });
 </script>
 

@@ -1,0 +1,311 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">
+                Edit table
+                <span class="badge bg-secondary ms-2" th:text="${selectedSchema}">public</span>
+                <span class="ms-1" th:text="${selectedTable}">my_table</span>
+            </h3>
+        </div>
+
+        <div class="card-body">
+    <form method="post" th:action="@{/schemas/edit}" th:object="${form}">
+        <input type="hidden" th:field="*{schema}">
+        <input type="hidden" th:field="*{table}">
+
+        <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th>Column</th>
+                    <th>Type</th>
+                    <th class="text-center">Nullable</th>
+                    <th>Default</th>
+                    <th>Comment</th>
+                    <th class="text-center">PK</th>
+                    <th class="text-center">Unique</th>
+                    <th>Foreign key</th>
+                </tr>
+                </thead>
+                <tbody id="columns-body" th:attr="data-next-index=${#lists.size(form.columns)}">
+                <tr th:each="col, iter : *{columns}">
+                    <td style="min-width: 160px;">
+                        <input type="hidden" th:field="*{columns[__${iter.index}__].originalName}">
+                        <input class="form-control form-control-sm" placeholder="column_name"
+                               th:field="*{columns[__${iter.index}__].name}">
+                    </td>
+                    <td style="min-width: 180px;">
+                        <select class="form-select form-select-sm"
+                                th:field="*{columns[__${iter.index}__].type}">
+                            <option value="">-- type --</option>
+                            <option th:each="t : ${typeOptions}"
+                                    th:value="${t}"
+                                    th:text="${t}"></option>
+                                <!-- Keep current type as an extra option if present -->
+                                <option th:if="${col.type} != null"
+                                    th:value="${col.type}"
+                                    th:text="|${col.type} (current)|"></option>
+                        </select>
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox"
+                               th:field="*{columns[__${iter.index}__].nullable}">
+                    </td>
+                    <td style="min-width: 200px;">
+                        <div class="input-group input-group-sm">
+                            <input class="form-control" placeholder="now(), 0, 'x'"
+                                   th:field="*{columns[__${iter.index}__].defaultValue}">
+                            <button class="btn btn-outline-secondary dropdown-toggle"
+                                    type="button"
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false">...</button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li class="dropdown-header small text-muted">Defaults sugeridos</li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="timestamp">CURRENT_TIMESTAMP</button></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="timestamp">now()</button></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="boolean" data-default-value="true">true</button></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="boolean" data-default-value="false">false</button></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="0">0</button></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="1">1</button></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="text" data-default-value="''">'' (vazio)</button></li>
+                            </ul>
+                        </div>
+                    </td>
+                    <td style="min-width: 200px;">
+                        <textarea class="form-control form-control-sm" rows="1" style="resize: vertical;"
+                                  placeholder="Comment"
+                                  th:field="*{columns[__${iter.index}__].comment}"></textarea>
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox"
+                               th:field="*{columns[__${iter.index}__].primaryKey}">
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox"
+                               th:field="*{columns[__${iter.index}__].unique}">
+                    </td>
+                    <td style="min-width: 260px;">
+                        <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
+                            <div class="form-check mb-1 me-2">
+                                <input class="form-check-input" type="checkbox"
+                                       th:field="*{columns[__${iter.index}__].foreignKey}">
+                                <label class="form-check-label small">FK</label>
+                            </div>
+                            <div class="d-flex flex-row gap-1 flex-wrap"
+                                 th:if="*{columns[__${iter.index}__].foreignKey}">
+                                <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;"
+                                    th:field="*{columns[__${iter.index}__].refSchema}">
+                                    <option value="">schema</option>
+                                    <option th:each="s : ${schemaOptions}"
+                                        th:value="${s}"
+                                        th:text="${s}"></option>
+                                </select>
+                                <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;"
+                                        th:field="*{columns[__${iter.index}__].refTable}">
+                                    <option value="">table</option>
+                                    <option th:if="*{columns[__${iter.index}__].refTable} != null"
+                                            th:value="*{columns[__${iter.index}__].refTable}"
+                                            th:text="*{columns[__${iter.index}__].refTable}"></option>
+                                </select>
+                                <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;"
+                                        th:field="*{columns[__${iter.index}__].refColumn}">
+                                    <option value="">column</option>
+                                    <option th:if="*{columns[__${iter.index}__].refColumn} != null"
+                                            th:value="*{columns[__${iter.index}__].refColumn}"
+                                            th:text="*{columns[__${iter.index}__].refColumn}"></option>
+                                </select>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <button type="button" id="add-column-btn" class="btn btn-outline-primary btn-sm">+ New column</button>
+        </div>
+
+        <!-- Index maintenance (create composite/partial/unique index) -->
+        <div class="mt-4">
+            <h5 class="mb-2">Indexes</h5>
+
+            <table class="table table-sm align-middle mb-3">
+                <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>Columns</th>
+                    <th class="text-center">Unique</th>
+                    <th>WHERE</th>
+                    <th>Info</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="idx : ${indexes}">
+                    <td th:text="${idx.name}"></td>
+                    <td th:text="${idx.columns}"></td>
+                    <td class="text-center">
+                        <span class="badge bg-secondary" th:if="${idx.unique}">UNIQUE</span>
+                    </td>
+                    <td th:text="${idx.whereClause}"></td>
+                    <td class="small text-muted">
+                        <span th:text="${idx.constraintBacked} ? 'constraint-backed' : 'regular index'"></span>
+                    </td>
+                    <td class="text-center">
+                        <button type="button"
+                                class="btn btn-outline-primary btn-sm index-edit-btn"
+                                th:data-index-name="${idx.name}"
+                                th:data-index-columns="${idx.columns}"
+                                th:data-index-unique="${idx.unique}"
+                                th:data-index-where="${idx.whereClause}">
+                            Edit
+                        </button>
+                        <form th:action="@{/schemas/index/delete}"
+                              method="post"
+                              class="d-inline ms-1"
+                              onsubmit="return confirm('Delete this index?');">
+                            <input type="hidden" name="schema" th:value="${selectedSchema}">
+                            <input type="hidden" name="table" th:value="${selectedTable}">
+                            <input type="hidden" name="indexName" th:value="${idx.name}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                <tr th:if="${#lists.isEmpty(indexes)}">
+                    <td colspan="6" class="text-muted small">No indexes (besides PK/UNIQUE constraints).</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <div class="border rounded p-2 bg-light mb-3">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm mb-1">New index name</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="idx_my_table_cols"
+                               th:field="*{newIndexName}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label form-label-sm mb-1">Columns (comma separated)</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="col1, col2"
+                               th:field="*{newIndexColumns}">
+                    </div>
+                    <div class="col-md-1 text-center">
+                        <label class="form-label form-label-sm mb-1">Unique</label>
+                        <input class="form-check-input mt-1" type="checkbox"
+                               th:field="*{newIndexUnique}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label form-label-sm mb-1">WHERE (optional)</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="status = 'ACTIVE'"
+                               th:field="*{newIndexWhere}">
+                    </div>
+                </div>
+                <input type="hidden" th:field="*{editIndexOriginalName}">
+                <p class="small text-muted mt-2 mb-0">
+                    Use este bloco para criar índices simples, compostos, únicos e/ou parciais (com WHERE)
+                    na tabela, ou para editar um índice existente (botão Edit). Eles serão aplicados junto com as demais alterações.
+                </p>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+            <a class="btn btn-outline-secondary btn-sm"
+               th:href="@{/schemas(schema=${selectedSchema}, table=${selectedTable})}">Back</a>
+            <button class="btn btn-primary btn-sm" type="submit">Apply changes</button>
+        </div>
+
+        <p class="text-muted mt-2 small">
+            Use o formulário para alterar tipos, nulos, default, comentários,
+            chave primária, UNIQUE e FKs de cada coluna. As alterações serão
+            aplicadas gerando automaticamente comandos ALTER TABLE.
+        </p>
+    </form>
+        </div> <!-- card-body -->
+    </div> <!-- card -->
+
+    <!-- Template de linha de coluna usada pelo botão "+ New column" -->
+    <script type="text/template" id="column-row-template">
+        <tr>
+            <td style="min-width: 160px;">
+                <input type="hidden" name="columns[__INDEX__].originalName" value="">
+                <input class="form-control form-control-sm" placeholder="column_name"
+                       name="columns[__INDEX__].name" value="">
+            </td>
+            <td style="min-width: 180px;">
+                <select class="form-select form-select-sm" name="columns[__INDEX__].type">
+                    <option value="">-- type --</option>
+                    <option value="integer">integer</option>
+                    <option value="bigint">bigint</option>
+                    <option value="smallint">smallint</option>
+                    <option value="serial">serial</option>
+                    <option value="bigserial">bigserial</option>
+                    <option value="uuid">uuid</option>
+                    <option value="text">text</option>
+                    <option value="varchar(255)">varchar(255)</option>
+                    <option value="boolean">boolean</option>
+                    <option value="timestamp without time zone">timestamp without time zone</option>
+                    <option value="timestamp with time zone">timestamp with time zone</option>
+                    <option value="date">date</option>
+                    <option value="time without time zone">time without time zone</option>
+                    <option value="numeric">numeric</option>
+                    <option value="jsonb">jsonb</option>
+                </select>
+            </td>
+            <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].nullable" checked>
+            </td>
+            <td style="min-width: 200px;">
+                <div class="input-group input-group-sm">
+                    <input class="form-control" placeholder="now(), 0, 'x'" name="columns[__INDEX__].defaultValue" value="">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">...</button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li class="dropdown-header small text-muted">Defaults sugeridos</li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="timestamp">CURRENT_TIMESTAMP</button></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="timestamp">now()</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="boolean" data-default-value="true">true</button></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="boolean" data-default-value="false">false</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="0">0</button></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="1">1</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="text" data-default-value="''">'' (vazio)</button></li>
+                    </ul>
+                </div>
+            </td>
+            <td style="min-width: 200px;">
+                <input class="form-control form-control-sm" placeholder="Comment" name="columns[__INDEX__].comment" value="">
+            </td>
+            <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].primaryKey">
+            </td>
+            <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].unique">
+            </td>
+            <td style="min-width: 260px;">
+                <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
+                    <div class="form-check mb-1 me-2">
+                        <input class="form-check-input" type="checkbox" name="columns[__INDEX__].foreignKey">
+                        <label class="form-check-label small">FK</label>
+                    </div>
+                    <div class="d-flex flex-row gap-1 flex-wrap">
+                        <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;" name="columns[__INDEX__].refSchema">
+                            <option value="">schema</option>
+                            <!-- será populado por Select2 / usuário -->
+                        </select>
+                        <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;" name="columns[__INDEX__].refTable">
+                            <option value="">table</option>
+                        </select>
+                        <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;" name="columns[__INDEX__].refColumn">
+                            <option value="">column</option>
+                        </select>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    </script>
+</div>
