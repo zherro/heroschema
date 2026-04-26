@@ -24,7 +24,8 @@
                     <th>Comment</th>
                     <th class="text-center">PK</th>
                     <th class="text-center">Unique</th>
-                    <th>Foreign key</th>
+                    <th class="text-center">Foreign key</th>
+                    <th class="text-center text-danger">Del</th>
                 </tr>
                 </thead>
                 <tbody id="columns-body" th:attr="data-next-index=${#lists.size(form.columns)}">
@@ -69,6 +70,9 @@
                                 <li><hr class="dropdown-divider"></li>
                                 <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="0">0</button></li>
                                 <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="1">1</button></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="gen_random_uuid()">gen_random_uuid()</button></li>
+                                <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="auth.fun_auth_user_id()">auth.fun_auth_user_id()</button></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="text" data-default-value="''">'' (vazio)</button></li>
                             </ul>
@@ -120,6 +124,12 @@
                             </div>
                         </div>
                     </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox"
+                               th:field="*{columns[__${iter.index}__].drop}"
+                               title="Mark column for deletion"
+                               style="accent-color: #dc3545;">
+                    </td>
                 </tr>
                 </tbody>
             </table>
@@ -164,15 +174,10 @@
                                 th:data-index-where="${idx.whereClause}">
                             Edit
                         </button>
-                        <form th:action="@{/schemas/index/delete}"
-                              method="post"
-                              class="d-inline ms-1"
-                              onsubmit="return confirm('Delete this index?');">
-                            <input type="hidden" name="schema" th:value="${selectedSchema}">
-                            <input type="hidden" name="table" th:value="${selectedTable}">
-                            <input type="hidden" name="indexName" th:value="${idx.name}">
-                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
-                        </form>
+                        <button type="submit"
+                                class="btn btn-outline-danger btn-sm ms-1"
+                                th:form="'del-idx-' + ${idx.name}"
+                                onclick="return confirm('Delete this index?');">Delete</button>
                     </td>
                 </tr>
                 <tr th:if="${#lists.isEmpty(indexes)}">
@@ -227,6 +232,17 @@
         </div> <!-- card-body -->
     </div> <!-- card -->
 
+    <!-- Forms de delete de índice (fora do form principal para evitar aninhamento) -->
+    <th:block th:each="idx : ${indexes}">
+        <form th:id="'del-idx-' + ${idx.name}"
+              th:action="@{/schemas/index/delete}"
+              method="post">
+            <input type="hidden" name="schema" th:value="${selectedSchema}">
+            <input type="hidden" name="table" th:value="${selectedTable}">
+            <input type="hidden" name="indexName" th:value="${idx.name}">
+        </form>
+    </th:block>
+
     <!-- Template de linha de coluna usada pelo botão "+ New column" -->
     <script type="text/template" id="column-row-template">
         <tr>
@@ -273,6 +289,9 @@
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="0">0</button></li>
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="numeric" data-default-value="1">1</button></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="gen_random_uuid()">gen_random_uuid()</button></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="auth.fun_auth_user_id()">auth.fun_auth_user_id()</button></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="text" data-default-value="''">'' (vazio)</button></li>
                     </ul>
                 </div>
@@ -283,29 +302,33 @@
             <td class="text-center">
                 <input class="form-check-input" type="checkbox" name="columns[__INDEX__].primaryKey">
             </td>
-            <td class="text-center">
-                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].unique">
-            </td>
-            <td style="min-width: 260px;">
-                <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
-                    <div class="form-check mb-1 me-2">
-                        <input class="form-check-input" type="checkbox" name="columns[__INDEX__].foreignKey">
-                        <label class="form-check-label small">FK</label>
-                    </div>
-                    <div class="d-flex flex-row gap-1 flex-wrap">
-                        <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;" name="columns[__INDEX__].refSchema">
-                            <option value="">schema</option>
-                            <!-- será populado por Select2 / usuário -->
-                        </select>
-                        <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;" name="columns[__INDEX__].refTable">
-                            <option value="">table</option>
-                        </select>
-                        <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;" name="columns[__INDEX__].refColumn">
-                            <option value="">column</option>
-                        </select>
-                    </div>
-                </div>
-            </td>
-        </tr>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox" name="columns[__INDEX__].unique">
+                    </td>
+                    <td style="min-width: 260px;">
+                        <!-- FK selects -->
+                        <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
+                            <div class="form-check mb-1 me-2">
+                                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].foreignKey">
+                                <label class="form-check-label small">FK</label>
+                            </div>
+                            <div class="d-flex flex-row gap-1 flex-wrap">
+                                <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;" name="columns[__INDEX__].refSchema">
+                                    <option value="">schema</option>
+                                </select>
+                                <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;" name="columns[__INDEX__].refTable">
+                                    <option value="">table</option>
+                                </select>
+                                <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;" name="columns[__INDEX__].refColumn">
+                                    <option value="">column</option>
+                                </select>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input" type="checkbox" name="columns[__INDEX__].drop"
+                               title="Mark column for deletion" style="accent-color: #dc3545;">
+                    </td>
+                </tr>
     </script>
 </div>

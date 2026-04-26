@@ -232,6 +232,12 @@ class SchemaController(
             val newName = colForm.name.trim()
             val existing = originalName?.let { existingByName[it] }
 
+            // Drop column
+            if (colForm.drop && existing != null) {
+                statements.add("ALTER TABLE $fullTable DROP COLUMN \"${existing.name}\"")
+                continue
+            }
+
             if (existing == null && newName.isNotBlank()) {
                 // New column
                 val sb = StringBuilder()
@@ -427,10 +433,11 @@ class SchemaController(
     fun createTable(
         @RequestParam schema: String,
         @RequestParam name: String,
+        @RequestParam(defaultValue = "serial") idStrategy: String,
         redirect: RedirectAttributes
     ): String {
         return try {
-            repo.createTable(schema, name)
+            repo.createTable(schema, name, idStrategy)
             redirect.addFlashAttribute("message", "Table $schema.$name created")
             "redirect:/schemas?schema=$schema&table=$name"
         } catch (ex: Exception) {

@@ -28,6 +28,7 @@ data class TableConstraintsDto(
 data class ColumnFormDto(
     var originalName: String? = null,
     var name: String = "",
+    var drop: Boolean = false,
     var type: String = "",
     var nullable: Boolean = true,
     var defaultValue: String? = null,

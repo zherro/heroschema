@@ -47,6 +47,14 @@
                         <input type="hidden" name="schema" th:value="${schema.name}">
                         <input type="text" name="name" class="form-control form-control-sm" style="width: 140px;"
                                placeholder="new_table">
+                        <select name="idStrategy" class="form-select form-select-sm" style="width: 145px;" title="ID strategy">
+                            <option value="serial" selected>id serial</option>
+                            <option value="bigserial">id bigserial</option>
+                            <option value="int_identity">id int identity</option>
+                            <option value="bigint_identity">id bigint identity</option>
+                            <option value="uuid">id uuid</option>
+                            <option value="none">without id</option>
+                        </select>
                         <button class="btn btn-outline-primary btn-sm" type="submit" title="Create table">New</button>
                     </form>
                 </div>
