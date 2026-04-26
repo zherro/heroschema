@@ -303,6 +303,45 @@ class MetadataRepository(
         jdbc.execute(sql)
     }
 
+    fun grantSequencePrivileges(schema: String, sequenceName: String, grantee: String, privileges: List<String>) {
+        if (privileges.isEmpty()) return
+        val sql = "GRANT ${privileges.joinToString(", ")} ON SEQUENCE \"$schema\".\"$sequenceName\" TO \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun listSequenceGrants(schema: String, sequenceName: String): List<TableGrantDto> =
+        jdbc.query(
+            """
+            SELECT
+              CASE WHEN a.grantee = 0 THEN 'public' ELSE r.rolname END AS grantee,
+              string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type) AS privileges
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('S', c.relowner))) a
+            LEFT JOIN pg_roles r ON r.oid = a.grantee
+            WHERE c.relkind = 'S'
+              AND n.nspname = ?
+              AND c.relname = ?
+            GROUP BY CASE WHEN a.grantee = 0 THEN 'public' ELSE r.rolname END
+            ORDER BY grantee
+            """.trimIndent(),
+            { rs, _ ->
+                TableGrantDto(
+                    grantee = rs.getString("grantee"),
+                    privileges = rs.getString("privileges") ?: ""
+                )
+            },
+            schema,
+            sequenceName
+        )
+
+    fun revokeAllSequencePrivileges(schema: String, sequenceName: String, grantee: String) {
+        val sql = "REVOKE ALL PRIVILEGES ON SEQUENCE \"$schema\".\"$sequenceName\" FROM \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
     fun isRlsEnabled(schema: String, table: String): Boolean =
         jdbc.queryForObject(
             """

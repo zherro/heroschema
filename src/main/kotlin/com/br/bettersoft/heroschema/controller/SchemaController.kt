@@ -138,6 +138,8 @@ class SchemaController(
         val indexes = repo.listIndexes(schema, table)
         val policies = repo.listPolicies(schema, table)
         val tableGrants = repo.listTableGrants(schema, table)
+        val defaultSequenceName = "${table}_id_seq"
+        val sequenceGrants = repo.listSequenceGrants(schema, defaultSequenceName)
         val rlsEnabled = repo.isRlsEnabled(schema, table)
 
         val formColumns = columns.map { col ->
@@ -208,6 +210,8 @@ class SchemaController(
         model.addAttribute("indexes", indexes)
         model.addAttribute("policies", policies)
         model.addAttribute("tableGrants", tableGrants)
+        model.addAttribute("defaultSequenceName", defaultSequenceName)
+        model.addAttribute("sequenceGrants", sequenceGrants)
         model.addAttribute("rlsEnabled", rlsEnabled)
         if (!model.containsAttribute("permissionsForm")) {
             model.addAttribute("permissionsForm", permissionsForm)
@@ -508,6 +512,53 @@ class SchemaController(
             "redirect:/schemas/edit?schema=$schema&table=$table"
         } catch (ex: Exception) {
             redirect.addFlashAttribute("error", "Error revoking grant: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/grant/sequence/apply")
+    fun applySequenceGrant(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam sequenceName: String,
+        @RequestParam grantee: String,
+        @RequestParam(defaultValue = "false") grantUsage: Boolean,
+        @RequestParam(defaultValue = "false") grantSelect: Boolean,
+        redirect: RedirectAttributes
+    ): String {
+        val privileges = mutableListOf<String>()
+        if (grantUsage) privileges.add("USAGE")
+        if (grantSelect) privileges.add("SELECT")
+
+        if (sequenceName.isBlank() || grantee.isBlank() || privileges.isEmpty()) {
+            redirect.addFlashAttribute("error", "Fill sequence name, role and at least one privilege")
+            return "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+
+        return try {
+            repo.grantSequencePrivileges(schema, sequenceName, grantee, privileges)
+            redirect.addFlashAttribute("message", "Granted ${privileges.joinToString(", ")} on $schema.$sequenceName to $grantee")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error applying sequence grant: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/grant/sequence/revoke")
+    fun revokeSequenceGrant(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam sequenceName: String,
+        @RequestParam grantee: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.revokeAllSequencePrivileges(schema, sequenceName, grantee)
+            redirect.addFlashAttribute("message", "Revoked sequence privileges from $grantee")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error revoking sequence grant: ${ex.message}")
             "redirect:/schemas/edit?schema=$schema&table=$table"
         }
     }
