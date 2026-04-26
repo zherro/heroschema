@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
-        repo.listIndexes(schema, table)
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.servlet.mvc.support.RedirectAttributes
 
@@ -30,10 +30,10 @@ class SchemaController(
     ): String {
 
         val schemas = repo.listSchemas()
-                sb.append("ALTER TABLE $fullTable ADD COLUMN \"$newName\" ${colForm.type}")
+        model.addAttribute("schemas", schemas)
         model.addAttribute("selectedSchema", schema)
         model.addAttribute("selectedTable", table)
-                    sb.append(" DEFAULT $it")
+        model.addAttribute("page", "schemas")
 
         val schemaItems = schemas.map { schemaName ->
             SchemaWithTablesDto(
@@ -41,22 +41,22 @@ class SchemaController(
                 tables = repo.listTables(schemaName)
             )
         }
-                    statements.add("ALTER TABLE $fullTable RENAME COLUMN \"$currentName\" TO \"$newName\"")
+        model.addAttribute("schemaItems", schemaItems)
 
         if (schema != null && table != null) {
             val columns = repo.listColumns(schema, table)
             val constraints = repo.getTableConstraints(schema, table)
 
             val columnViews = columns.map { col ->
-                    statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" TYPE ${colForm.type}")
+                val isPk = constraints.primaryKeyColumns.contains(col.name)
                 val isUnique = constraints.uniqueColumns.containsKey(col.name)
                 val fkInfo = constraints.foreignKeys[col.name]
                 val fkRef = fkInfo?.let { "${it.refSchema}.${it.refTable}.${it.refColumn}" }
 
                 ColumnWithConstraintsDto(
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" DROP NOT NULL")
+                    name = col.name,
                     type = col.type,
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" SET NOT NULL")
+                    nullable = col.nullable,
                     defaultValue = col.defaultValue,
                     comment = col.comment,
                     primaryKey = isPk,
@@ -65,9 +65,9 @@ class SchemaController(
                 )
             }
 
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" DROP DEFAULT")
+            model.addAttribute("columns", columnViews)
             model.addAttribute("pageTitle", "$schema.$table")
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" SET DEFAULT $newDefault")
+        } else {
             model.addAttribute("pageTitle", "Schemas / Tables")
         }
 
@@ -76,8 +76,8 @@ class SchemaController(
 
         return "layout"
     }
-                        "COMMENT ON COLUMN $fullTable.\"$effectiveName\" IS '${it.replace("'", "''")}'"
-                    } ?: "COMMENT ON COLUMN $fullTable.\"$effectiveName\" IS NULL"
+
+    @PostMapping("/schema/rename")
     fun renameSchema(
         @RequestParam oldName: String,
         @RequestParam newName: String,
@@ -91,15 +91,15 @@ class SchemaController(
             redirect.addFlashAttribute("error", "Error renaming schema: ${ex.message}")
             "redirect:/schemas?schema=$oldName"
         }
-            ?: if (desiredPkColumns.isNotEmpty() || currentPkColumns.isNotEmpty()) "pk_$table" else null
+    }
 
     @PostMapping("/schema/delete")
     fun deleteSchema(
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"$pkName\"")
+        @RequestParam name: String,
         @RequestParam(defaultValue = "false") cascade: Boolean,
         redirect: RedirectAttributes
-                val colsList = desiredPkColumns.joinToString(", ") { "\"$it\"" }
-                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"$pkName\" PRIMARY KEY ($colsList)")
+    ): String {
+        return try {
             repo.dropSchema(name, cascade)
             redirect.addFlashAttribute("message", "Schema $name deleted")
             "redirect:/schemas"
@@ -110,9 +110,9 @@ class SchemaController(
     }
 
     @PostMapping("/schema/create")
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"$existingConstraintName\"")
+    fun createSchema(
         @RequestParam name: String,
-                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"uq_${table}_$colName\" UNIQUE (\"$colName\")")
+        redirect: RedirectAttributes
     ): String {
         return try {
             repo.createSchema(name)
@@ -126,7 +126,7 @@ class SchemaController(
 
     @GetMapping("/edit")
     fun editPage(
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${currentFk.constraintName}\"")
+        @RequestParam schema: String,
         @RequestParam table: String,
         model: Model
     ): String {
@@ -134,14 +134,14 @@ class SchemaController(
         val constraints = repo.getTableConstraints(schema, table)
         val allSchemas = repo.listSchemas()
         val indexes = repo.listIndexes(schema, table)
-                    statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${currentFk.constraintName}\"")
+
         val formColumns = columns.map { col ->
             val isPk = constraints.primaryKeyColumns.contains(col.name)
             val isUnique = constraints.uniqueColumns.containsKey(col.name)
-                    val fkName = currentFk?.constraintName ?: "fk_${table}_$colName"
+            val fkInfo = constraints.foreignKeys[col.name]
 
-                        "ALTER TABLE $fullTable ADD CONSTRAINT \"$fkName\" FOREIGN KEY (\"$colName\") " +
-                                "REFERENCES \"${colForm.refSchema}\".\"${colForm.refTable}\"(\"${colForm.refColumn}\")"
+            ColumnFormDto(
+                originalName = col.name,
                 name = col.name,
                 type = col.type,
                 nullable = col.nullable,
@@ -149,8 +149,10 @@ class SchemaController(
                 comment = col.comment,
                 primaryKey = isPk,
                 unique = isUnique,
-            return "redirect:/schemas?schema=$schema&table=$table"
+                foreignKey = fkInfo != null,
                 refSchema = fkInfo?.refSchema,
+                refTable = fkInfo?.refTable,
+                refColumn = fkInfo?.refColumn
             )
         }.toMutableList()
 
@@ -368,26 +370,24 @@ class SchemaController(
             val colsSql = newIndexColumns.split(',')
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .joinToString(", ") { "\"$it\"" }
+                .joinToString(", ") { "\"${'$'}it\"" }
 
             if (colsSql.isNotEmpty()) {
                 val uniqueSql = if (newIndexUnique) "UNIQUE " else ""
-                val whereSql = if (newIndexWhere.isNotEmpty()) " WHERE $newIndexWhere" else ""
+                val whereSql = if (newIndexWhere.isNotEmpty()) " WHERE ${'$'}newIndexWhere" else ""
                 val idxSql =
-                    "CREATE ${uniqueSql}INDEX \"$newIndexName\" ON $fullTable ($colsSql)$whereSql"
+                    "CREATE ${'$'}uniqueSqlINDEX \"${'$'}newIndexName\" ON $fullTable (${'$'}colsSql)${'$'}whereSql"
                 statements.add(idxSql)
             }
         }
 
-        val sql = statements.joinToString(";\n") + ";"
-
         return try {
             repo.executeTableSql(sql)
-            redirect.addFlashAttribute("message", "Table $schema.$table updated")
-            "redirect:/schemas?schema=$schema&table=$table"
+            redirect.addFlashAttribute("message", "Table ${'$'}schema.${'$'}table updated")
+            "redirect:/schemas?schema=${'$'}schema&table=${'$'}table"
         } catch (ex: Exception) {
-            redirect.addFlashAttribute("error", "Error updating table: ${ex.message}")
-            "redirect:/schemas/edit?schema=$schema&table=$table"
+            redirect.addFlashAttribute("error", "Error updating table: ${'$'}{ex.message}")
+            "redirect:/schemas/edit?schema=${'$'}schema&table=${'$'}table"
         }
     }
 
