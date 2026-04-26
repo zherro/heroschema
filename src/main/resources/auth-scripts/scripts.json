@@ -1,0 +1,59 @@
+[
+  {
+    "id": "002_create_auth_configure_users",
+    "path": "auth-scripts/002_create_auth_configure_users.sql",
+    "description": "Cria users anon, auth_user e authenticator. Para conexao no PostgREST utilizar: PGRST_DB_URI=postgres://authenticator:senha@db:5432/seu_db"
+  },
+  {
+    "id": "003_create_auth_fun_auth_current_tenant_id",
+    "path": "auth-scripts/003_create_auth_fun_auth_current_tenant_id.sql",
+    "description": "Funcao que retorna o tenant_id a partir do JWT da sessao."
+  },
+  {
+    "id": "004_create_auth_fun_auth_user_id",
+    "path": "auth-scripts/004_create_auth_fun_auth_user_id.sql",
+    "description": "Funcao que retorna o user_id a partir do JWT da sessao."
+  },
+  {
+    "id": "005_create_auth_fun_auth_tenant_type_is",
+    "path": "auth-scripts/005_create_auth_fun_auth_tenant_type_is.sql",
+    "description": "Funcao helper que valida se o tenant_type do JWT corresponde ao valor informado."
+  },
+  {
+    "id": "006_create_auth_fun_auth__has_permission",
+    "path": "auth-scripts/006_create_auth_fun_auth__has_permission.sql",
+    "description": "Funcao central de autorizacao RBAC. Valida permissoes por recurso e acao considerando JWT, roles por tenant, grupos, overrides por tenant e permissao especial de owner."
+  },
+  {
+    "id": "007_create_auth_table_users",
+    "path": "auth-scripts/007_create_auth_table_users.sql",
+    "description": "Cria tabelas de usuarios e controle de roles e permissoes."
+  },
+  {
+    "id": "008_create_auth_fun_auth__signup_bootstrap",
+    "path": "auth-scripts/008_create_auth_fun_auth__signup_bootstrap.sql",
+    "description": "Funcao para registro de novos usuarios."
+  },
+  {
+    "id": "009_create_auth_get_auth__effective_permissions",
+    "path": "auth-scripts/009_create_auth_get_auth__effective_permissions.sql",
+    "description": "Funcao que calcula e retorna as permissoes efetivas do usuario autenticado no tenant atual, agregando overrides por tenant, defaults de role e permissoes de grupos."
+  },
+  {
+    "id": "010_auth_grants_users",
+    "path": "auth-scripts/010_auth_grants_users.sql",
+    "description": "Aplica grants de acesso ao schema auth e à tabela users para as roles anon e auth_user, seguindo o padrao PostgREST (authenticator apenas conecta)."
+  },
+  {
+    "id": "998_create_authorities",
+    "path": "auth-scripts/998_create_authorities.sql",
+    "description": "Insert de roles e permissionamento"
+  },
+  {
+    "id": "999_grant_authenticator",
+    "path": "auth-scripts/999_grant_authenticator.sql",
+    "description": "Aplica grants de acesso ao schema  para a role authenticator."
+  }
+
+
+]

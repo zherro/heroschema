@@ -1,0 +1,86 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h3>Auth / Multi-tenant ultra power</h3>
+            <p class="text-muted">
+                Esta página executa uma sequência de scripts SQL que preparam um
+                ambiente de autenticação multi-tenant (schemas, tabelas e relações
+                básicas). Use em um banco vazio ou em um ambiente controlado.
+            </p>
+            <p class="text-muted">
+                Os scripts abaixo ficam em <code>src/main/resources/auth-scripts</code>
+                e podem ser personalizados. Cada script tem uma descrição breve e
+                será executado na ordem definida em <code>scripts.json</code>.
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-bold">Sequência de scripts</span>
+
+            <div th:if="${authStatus != null}">
+                <!-- Já instalado: não mostra nenhum botão, só status -->
+                <span th:if="${authStatus.complete}"
+                      class="badge bg-success">Auth system instalado (tudo OK no log).</span>
+
+                <!-- Há erros: oferece tentar novamente e reinstalar do início -->
+                <div th:if="${!authStatus.complete} and ${authStatus.hasErrors}"
+                     class="d-flex gap-2">
+                    <form method="post" th:action="@{/auth/install}"
+                          onsubmit="return confirm('Tentar novamente a partir do último erro?');">
+                        <input type="hidden" name="fromStart" value="false" />
+                        <button class="btn btn-warning btn-sm" type="submit">Tentar novamente</button>
+                    </form>
+                    <form method="post" th:action="@{/auth/install}"
+                          onsubmit="return confirm('Reinstalar o auth system do início? Esta operação pode recriar objetos já existentes.');">
+                        <input type="hidden" name="fromStart" value="true" />
+                        <button class="btn btn-danger btn-sm" type="submit">Reinstalar do início</button>
+                    </form>
+                </div>
+
+                <!-- Pendente, sem erros: instalar/atualizar (scripts novos ou ainda não rodados) -->
+                <form th:if="${!authStatus.complete} and ${!authStatus.hasErrors}"
+                      method="post" th:action="@{/auth/install}"
+                      onsubmit="return confirm('Instalar/atualizar o sistema de auth?');">
+                    <button class="btn btn-primary btn-sm" type="submit">Instalar / atualizar auth system</button>
+                </form>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Script</th>
+                    <th>Descrição</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="s,iter : ${scripts}">
+                    <td th:text="${iter.index + 1}"></td>
+                    <td>
+                        <code th:text="${s.path}">auth-scripts/001_...</code>
+                    </td>
+                    <td th:text="${s.description}"></td>
+                    <td>
+                        <span th:if="${authStatus != null}"
+                              th:text="${#maps.containsKey(authStatus.scriptStatuses, s.id) ? authStatus.scriptStatuses[s.id] : 'Pendente'}"
+                              class="small"></span>
+                    </td>
+                </tr>
+                <tr th:if="${#lists.isEmpty(scripts)}">
+                    <td colspan="4" class="text-muted small p-2">Nenhum script configurado em auth-scripts/scripts.json.</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="small text-muted">
+        Execução em tempo real (mostrar qual script está rodando agora) pode ser
+        adicionada depois com AJAX/polling. Por enquanto, o resultado aparece via
+        mensagem de sucesso/erro no topo da página.
+    </p>
+</div>
