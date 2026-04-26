@@ -80,12 +80,14 @@
     document.addEventListener('DOMContentLoaded', function () {
         if (window.CodeMirror) {
             document.querySelectorAll('textarea.sql-editor').forEach(function (ta) {
-                CodeMirror.fromTextArea(ta, {
+                var cm = CodeMirror.fromTextArea(ta, {
                     mode: 'text/x-sql',
                     lineNumbers: true,
                     theme: 'material',
                     viewportMargin: Infinity
                 });
+                // Keep a direct reference for custom sync routines.
+                ta.__cm = cm;
             });
         }
 
@@ -146,8 +148,20 @@
         });
 
         // Initialize searchable selects for FK (schema/table/column)
+        function refreshFkVisibility(scope) {
+            var $scope = scope ? jQuery(scope) : jQuery(document);
+            var $rows = $scope.is('tr') ? $scope : $scope.find('tr');
+            $rows.each(function () {
+                var $tr = jQuery(this);
+                var checked = $tr.find('.fk-toggle').is(':checked');
+                var $config = $tr.find('.fk-config');
+                if (!$config.length) return;
+                $config.toggleClass('d-none', !checked);
+            });
+        }
+
         function initFkSelects() {
-            if (!window.jQuery || !jQuery.fn.select2) {
+            if (!window.jQuery) {
                 return;
             }
 
@@ -181,25 +195,12 @@
                         var isSelected = selected === s;
                         $schemaSel.append(new Option(s, s, isSelected, isSelected));
                     });
-                    $schemaSel.trigger('change.select2');
+                    $schemaSel.trigger('change');
                 });
             }
 
             loadFkSchemas(populateSchemaSelects);
 
-            // Apply Select2 to all FK selects (existing + newly added rows)
-            jQuery('.fk-select').each(function () {
-                var $sel = jQuery(this);
-                if ($sel.data('select2')) {
-                    return;
-                }
-                $sel.select2({
-                    theme: 'bootstrap-5',
-                    width: 'style',
-                    allowClear: true,
-                    placeholder: $sel.find('option[value=""]').text() || ''
-                });
-            });
 
             // Bind change handlers only once
             if (window.__fkHandlersInitialized) {
@@ -251,6 +252,11 @@
         }
 
         initFkSelects();
+        refreshFkVisibility();
+
+        jQuery(document).on('change', '.fk-toggle', function () {
+            refreshFkVisibility(jQuery(this).closest('tr'));
+        });
 
         // New column button: clone template row and append to table body
         var addBtn = document.getElementById('add-column-btn');
@@ -275,6 +281,7 @@
                 // Re-init FK selects (Select2) and keep everything consistent
                 if (typeof jQuery !== 'undefined') {
                     initFkSelects();
+                    refreshFkVisibility(newRow);
                 }
             });
         }
@@ -301,6 +308,188 @@
             if (whereInput) whereInput.value = where || '';
             if (editOriginalInput) editOriginalInput.value = name;
         });
+
+        // Policy composer: keep SQL editor in sync while user edits policy fields
+        function bindPolicyComposerAutoSync() {
+            var form = document.getElementById('policy-composer-form');
+            if (!form) return;
+
+            var editor = form.querySelector('textarea[name="policyEditorSql"]');
+            if (!editor) return;
+            var usingControls = form.querySelector('.policy-using-controls');
+
+            function val(name) {
+                var el = form.querySelector('[name="' + name + '"]');
+                return el ? (el.value || '').trim() : '';
+            }
+
+            function resolveTemplate(key, action, resource, tenantColumn) {
+                var templates = {
+                    tenant_match: tenantColumn + ' = auth.fun_auth_current_tenant_id()',
+                    perm_view: "auth.fun_auth__has_permission('" + resource + "'::text, 'view'::text)",
+                    perm_create: "auth.fun_auth__has_permission('" + resource + "'::text, 'create'::text)",
+                    perm_update: "auth.fun_auth__has_permission('" + resource + "'::text, 'update'::text)",
+                    perm_delete: "auth.fun_auth__has_permission('" + resource + "'::text, 'delete'::text)",
+                    company_only: "auth.fun_tenant_type_is('COMPANY'::text)",
+                    allow_true: 'true',
+                    tenant_and_view: tenantColumn + " = auth.fun_auth_current_tenant_id() AND auth.fun_auth__has_permission('" + resource + "'::text, 'view'::text)",
+                    tenant_create_company: tenantColumn + " = auth.fun_auth_current_tenant_id() AND auth.fun_auth__has_permission('" + resource + "'::text, 'create'::text) AND auth.fun_tenant_type_is('COMPANY'::text)"
+                };
+
+                if (key === 'action_permission') {
+                    var actionPerm = action === 'INSERT' ? 'create' : action.toLowerCase();
+                    return "auth.fun_auth__has_permission('" + resource + "'::text, '" + actionPerm + "'::text)";
+                }
+
+                return templates[key] || '';
+            }
+
+            function autoRenamePolicyNameFromAction() {
+                var action = val('policyAction').toLowerCase();
+                var table = val('table');
+                var role = (val('policyRole') || 'auth_user').toLowerCase().replace(/\s+/g, '_');
+                var nameInput = form.querySelector('[name="policyName"]');
+                if (!nameInput || !action || !table || !role) return;
+
+                var current = (nameInput.value || '').trim();
+                if (!current) {
+                    nameInput.value = action + '_' + table + '_' + role;
+                    return;
+                }
+
+                var m = current.match(/^(select|insert|update|delete)_(.+?)_([a-z0-9_]+)$/i);
+                if (m) {
+                    nameInput.value = action + '_' + m[2] + '_' + role;
+                }
+            }
+
+            function refreshPolicyFieldVisibility() {
+                var action = val('policyAction').toLowerCase();
+                var isInsert = action === 'insert';
+                if (usingControls) {
+                    usingControls.classList.toggle('d-none', isInsert);
+                }
+            }
+
+            function buildSql() {
+                var schema = val('schema');
+                var table = val('table');
+                var action = val('policyAction').toUpperCase();
+                var policyName = val('policyName');
+                var role = val('policyRole') || 'auth_user';
+                var preset = val('policyPreset');
+                var usingExpr = val('customUsingExpr');
+                var withCheckExpr = val('customWithCheckExpr');
+
+                if (!schema || !table) return '-- Fill schema/table';
+                if (!policyName) return '-- Fill policy name';
+                if (preset !== 'custom') return '-- Use custom mode';
+                if (!usingExpr && !withCheckExpr) return '-- Fill USING and/or WITH CHECK';
+
+                var actionsSet = {};
+                actionsSet[action] = true;
+                var comboSelect = form.querySelector('[name="comboSelect"]');
+                var comboInsert = form.querySelector('[name="comboInsert"]');
+                var comboUpdate = form.querySelector('[name="comboUpdate"]');
+                var comboDelete = form.querySelector('[name="comboDelete"]');
+                if (comboSelect && comboSelect.checked) actionsSet['SELECT'] = true;
+                if (comboInsert && comboInsert.checked) actionsSet['INSERT'] = true;
+                if (comboUpdate && comboUpdate.checked) actionsSet['UPDATE'] = true;
+                if (comboDelete && comboDelete.checked) actionsSet['DELETE'] = true;
+
+                var actions = Object.keys(actionsSet).map(function (a) { return a.toLowerCase(); });
+
+                function policyNameForAction(base, act, total) {
+                    var role = (val('policyRole') || 'auth_user').toLowerCase().replace(/\s+/g, '_');
+                    var tableName = (val('table') || '').toLowerCase();
+
+                    if (total === 1) {
+                        return base;
+                    }
+
+                    return act + '_' + tableName + '_' + role;
+                }
+
+                function onePolicySql(act, name) {
+                    var sql = 'CREATE POLICY ' + name + ' ON ' + schema + '.' + table + '\n' +
+                        '  FOR ' + act.toUpperCase() + ' TO ' + role;
+                    if (act === 'insert') {
+                        if (withCheckExpr) sql += ' WITH CHECK (' + withCheckExpr + ')';
+                    } else if (act === 'update') {
+                        if (usingExpr) sql += ' USING (' + usingExpr + ')';
+                        if (withCheckExpr) sql += ' WITH CHECK (' + withCheckExpr + ')';
+                    } else {
+                        if (usingExpr) sql += ' USING (' + usingExpr + ')';
+                    }
+                    return sql + ';';
+                }
+
+                if (actions.length === 1) {
+                    return onePolicySql(actions[0], policyNameForAction(policyName, actions[0], 1));
+                }
+
+                var header = '-- Selected actions: ' + actions.map(function (a) { return a.toUpperCase(); }).join(', ');
+                var statements = actions.map(function (act) {
+                    return onePolicySql(act, policyNameForAction(policyName, act, actions.length));
+                });
+                return header + '\n' + statements.join('\n\n');
+            }
+
+            function syncEditor() {
+                var nextSql = buildSql();
+                if (editor.__cm) {
+                    editor.__cm.setValue(nextSql);
+                } else {
+                    editor.value = nextSql;
+                }
+            }
+
+            form.addEventListener('input', function (e) {
+                var t = e.target;
+                if (!t) return;
+                if (t.name === 'policyEditorSql') return;
+                if (t.name === 'policyAction') {
+                    autoRenamePolicyNameFromAction();
+                    refreshPolicyFieldVisibility();
+                }
+                syncEditor();
+            });
+
+            form.addEventListener('change', function (e) {
+                var t = e.target;
+                if (!t) return;
+                if (t.name === 'policyEditorSql') return;
+
+                if (t.name === 'policyAction') {
+                    autoRenamePolicyNameFromAction();
+                    refreshPolicyFieldVisibility();
+                }
+
+                if (t.classList && t.classList.contains('policy-condition-template')) {
+                    var targetName = t.getAttribute('data-target');
+                    var targetInput = form.querySelector('[name="' + targetName + '"]');
+                    if (targetInput && t.value) {
+                        var action = val('policyAction').toUpperCase();
+                        var resource = val('resourceName') || 'resource';
+                        var tenantColumn = val('tenantColumn') || 'tenant_id';
+                        targetInput.value = resolveTemplate(t.value, action, resource, tenantColumn);
+                    }
+                }
+                syncEditor();
+            });
+
+            // Fill initial draft only when editor is empty.
+            var currentEditorValue = editor.__cm ? editor.__cm.getValue() : editor.value;
+            if (!currentEditorValue || !currentEditorValue.trim()) {
+                autoRenamePolicyNameFromAction();
+                refreshPolicyFieldVisibility();
+                syncEditor();
+            } else {
+                refreshPolicyFieldVisibility();
+            }
+        }
+
+        bindPolicyComposerAutoSync();
     });
 </script>
 

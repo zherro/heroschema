@@ -47,6 +47,20 @@ data class IndexDto(
     val constraintBacked: Boolean
 )
 
+data class PolicyDto(
+    val name: String,
+    val command: String,
+    val roles: String,
+    val usingExpr: String?,
+    val withCheckExpr: String?,
+    val definitionSql: String
+)
+
+data class TableGrantDto(
+    val grantee: String,
+    val privileges: String
+)
+
 data class FunctionDto(
     val schema: String,
     val name: String,

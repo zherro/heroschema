@@ -5,6 +5,8 @@ import com.br.bettersoft.heroschema.dtos.FunctionDto
 import com.br.bettersoft.heroschema.dtos.ForeignKeyInfoDto
 import com.br.bettersoft.heroschema.dtos.TableConstraintsDto
 import com.br.bettersoft.heroschema.dtos.IndexDto
+import com.br.bettersoft.heroschema.dtos.PolicyDto
+import com.br.bettersoft.heroschema.dtos.TableGrantDto
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -38,6 +40,17 @@ class MetadataRepository(
             """.trimIndent(),
             String::class.java,
             schema
+        )
+
+    fun listRoles(): List<String> =
+        jdbc.queryForList(
+            """
+            SELECT rolname
+            FROM pg_roles
+            WHERE rolname NOT LIKE 'pg_%'
+            ORDER BY rolname
+            """.trimIndent(),
+            String::class.java
         )
 
     fun renameSchema(oldName: String, newName: String) {
@@ -204,6 +217,142 @@ class MetadataRepository(
         val sql = "DROP INDEX IF EXISTS \"$schema\".\"$indexName\""
         logger.info("Executing SQL: {}", sql)
         jdbc.execute(sql)
+    }
+
+    fun listPolicies(schema: String, table: String): List<PolicyDto> =
+        jdbc.query(
+            """
+            SELECT policyname, cmd, roles, qual, with_check
+            FROM pg_policies
+            WHERE schemaname = ?
+              AND tablename = ?
+            ORDER BY policyname
+            """.trimIndent(),
+            { rs, _ ->
+                val policyName = rs.getString("policyname")
+                val cmd = rs.getString("cmd") ?: "ALL"
+                val rolesArr = (rs.getArray("roles")?.array as? Array<*>)
+                val roles = rolesArr
+                    ?.mapNotNull { it?.toString() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.joinToString(", ")
+                    ?: "public"
+                val usingExpr = rs.getString("qual")
+                val withCheckExpr = rs.getString("with_check")
+                val definitionSql = buildPolicyDefinitionSql(
+                    schema = schema,
+                    table = table,
+                    policyName = policyName,
+                    command = cmd,
+                    roles = roles,
+                    usingExpr = usingExpr,
+                    withCheckExpr = withCheckExpr
+                )
+
+                PolicyDto(
+                    name = policyName,
+                    command = cmd,
+                    roles = roles,
+                    usingExpr = usingExpr,
+                    withCheckExpr = withCheckExpr,
+                    definitionSql = definitionSql
+                )
+            },
+            schema,
+            table
+        )
+
+    fun dropPolicy(schema: String, table: String, policyName: String) {
+        val sql = "DROP POLICY IF EXISTS \"$policyName\" ON \"$schema\".\"$table\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun listTableGrants(schema: String, table: String): List<TableGrantDto> =
+        jdbc.query(
+            """
+            SELECT
+              grantee,
+              string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privileges
+            FROM information_schema.role_table_grants
+            WHERE table_schema = ?
+              AND table_name = ?
+            GROUP BY grantee
+            ORDER BY grantee
+            """.trimIndent(),
+            { rs, _ ->
+                TableGrantDto(
+                    grantee = rs.getString("grantee"),
+                    privileges = rs.getString("privileges") ?: ""
+                )
+            },
+            schema,
+            table
+        )
+
+    fun grantTablePrivileges(schema: String, table: String, grantee: String, privileges: List<String>) {
+        if (privileges.isEmpty()) return
+        val sql = "GRANT ${privileges.joinToString(",")} ON TABLE \"$schema\".\"$table\" TO \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun revokeAllTablePrivileges(schema: String, table: String, grantee: String) {
+        val sql = "REVOKE ALL PRIVILEGES ON TABLE \"$schema\".\"$table\" FROM \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun isRlsEnabled(schema: String, table: String): Boolean =
+        jdbc.queryForObject(
+            """
+            SELECT c.relrowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ?
+              AND c.relname = ?
+            """.trimIndent(),
+            Boolean::class.java,
+            schema,
+            table
+        ) ?: false
+
+    fun enableRls(schema: String, table: String) {
+        val sql = "ALTER TABLE \"$schema\".\"$table\" ENABLE ROW LEVEL SECURITY"
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun disableRls(schema: String, table: String) {
+        val sql = "ALTER TABLE \"$schema\".\"$table\" DISABLE ROW LEVEL SECURITY"
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    private fun buildPolicyDefinitionSql(
+        schema: String,
+        table: String,
+        policyName: String,
+        command: String,
+        roles: String,
+        usingExpr: String?,
+        withCheckExpr: String?
+    ): String {
+        val sb = StringBuilder()
+        sb.append("CREATE POLICY \"").append(policyName).append("\" ON \"")
+            .append(schema).append("\".\"").append(table).append("\"\n")
+            .append("  FOR ").append(command.uppercase())
+            .append(" TO ").append(roles).append("\n")
+
+        if (!usingExpr.isNullOrBlank()) {
+            sb.append("  USING (").append(usingExpr).append(")")
+            if (!withCheckExpr.isNullOrBlank()) sb.append("\n")
+        }
+        if (!withCheckExpr.isNullOrBlank()) {
+            sb.append("  WITH CHECK (").append(withCheckExpr).append(")")
+        }
+        sb.append(";")
+        return sb.toString()
     }
 
     /**

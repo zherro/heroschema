@@ -91,29 +91,33 @@
                         <input class="form-check-input" type="checkbox"
                                th:field="*{columns[__${iter.index}__].unique}">
                     </td>
-                    <td style="min-width: 260px;">
-                        <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
-                            <div class="form-check mb-1 me-2">
-                                <input class="form-check-input" type="checkbox"
-                                       th:field="*{columns[__${iter.index}__].foreignKey}">
-                                <label class="form-check-label small">FK</label>
-                            </div>
-                            <div class="d-flex flex-row gap-1 flex-wrap">
-                                <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;"
-                                    th:field="*{columns[__${iter.index}__].refSchema}">
+                    <td style="min-width: 320px;">
+                        <div class="form-check mb-1">
+                            <input class="form-check-input fk-toggle" type="checkbox"
+                                   th:field="*{columns[__${iter.index}__].foreignKey}">
+                            <label class="form-check-label small">Enable FK</label>
+                        </div>
+                        <div class="fk-config row g-1" th:classappend="*{columns[__${iter.index}__].foreignKey} ? '' : ' d-none'">
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-schema-select w-100"
+                                        th:field="*{columns[__${iter.index}__].refSchema}">
                                     <option value="">schema</option>
                                     <option th:each="s : ${schemaOptions}"
-                                        th:value="${s}"
-                                        th:text="${s}"></option>
+                                            th:value="${s}"
+                                            th:text="${s}"></option>
                                 </select>
-                                <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;"
+                            </div>
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-table-select w-100"
                                         th:field="*{columns[__${iter.index}__].refTable}">
                                     <option value="">table</option>
                                     <option th:if="*{columns[__${iter.index}__].refTable} != null"
                                             th:value="*{columns[__${iter.index}__].refTable}"
                                             th:text="*{columns[__${iter.index}__].refTable}"></option>
                                 </select>
-                                <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;"
+                            </div>
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-column-select w-100"
                                         th:field="*{columns[__${iter.index}__].refColumn}">
                                     <option value="">column</option>
                                     <option th:if="*{columns[__${iter.index}__].refColumn} != null"
@@ -231,6 +235,200 @@
         </div> <!-- card-body -->
     </div> <!-- card -->
 
+    <div class="card shadow-sm mt-3">
+        <div class="card-header">
+            <h5 class="mb-0">Permissions &amp; RLS</h5>
+        </div>
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="small text-muted">RLS status:</span>
+                <span class="badge" th:classappend="${rlsEnabled} ? ' bg-success' : ' bg-secondary'"
+                      th:text="${rlsEnabled} ? 'ENABLED' : 'DISABLED'">DISABLED</span>
+                <form method="post" th:action="@{/schemas/rls/enable}" th:if="${!rlsEnabled}">
+                    <input type="hidden" name="schema" th:value="${selectedSchema}">
+                    <input type="hidden" name="table" th:value="${selectedTable}">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Enable RLS</button>
+                </form>
+                <form method="post" th:action="@{/schemas/rls/disable}" th:if="${rlsEnabled}">
+                    <input type="hidden" name="schema" th:value="${selectedSchema}">
+                    <input type="hidden" name="table" th:value="${selectedTable}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Disable RLS for this table?');">Disable RLS</button>
+                </form>
+            </div>
+
+            <div class="border rounded p-3 bg-light mt-2">
+                <h6 class="mb-2">Table grants</h6>
+                <form method="post" th:action="@{/schemas/grant/table/apply}">
+                    <input type="hidden" name="schema" th:value="${selectedSchema}">
+                    <input type="hidden" name="table" th:value="${selectedTable}">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Role</label>
+                            <select class="form-select form-select-sm" name="grantee">
+                                <option value="">-- select role --</option>
+                                <option th:each="r : ${roleOptions}" th:value="${r}" th:text="${r}"></option>
+                            </select>
+                        </div>
+                        <div class="col-md-7 d-flex gap-3">
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="grantSelect" value="true"><label class="form-check-label small">SELECT</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="grantInsert" value="true"><label class="form-check-label small">INSERT</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="grantUpdate" value="true"><label class="form-check-label small">UPDATE</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="grantDelete" value="true"><label class="form-check-label small">DELETE</label></div>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary btn-sm w-100" type="submit">Apply grant</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="mt-3">
+                    <div class="small text-muted mb-1">Current grants</div>
+                    <div th:if="${#lists.isEmpty(tableGrants)}" class="small text-muted">No grants found for this table.</div>
+                    <div th:each="g : ${tableGrants}" class="d-flex justify-content-between align-items-center border rounded px-2 py-1 mb-1 bg-white">
+                        <div class="small"><strong th:text="${g.grantee}">role</strong> <span th:text="${g.privileges}">SELECT</span></div>
+                        <form method="post" th:action="@{/schemas/grant/table/revoke}">
+                            <input type="hidden" name="schema" th:value="${selectedSchema}">
+                            <input type="hidden" name="table" th:value="${selectedTable}">
+                            <input type="hidden" name="grantee" th:value="${g.grantee}">
+                            <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Revoke all table privileges for this role?');">Revoke</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <form id="policy-composer-form" class="border rounded p-3 mt-3" th:if="${rlsEnabled}" method="post" th:object="${permissionsForm}">
+                <input type="hidden" th:field="*{schema}">
+                <input type="hidden" th:field="*{table}">
+
+                <h6 class="mb-2">Policy composer (1 by 1 or combo)</h6>
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">Action</label>
+                        <select class="form-select form-select-sm" th:field="*{policyAction}">
+                            <option value="select">select</option>
+                            <option value="insert">insert</option>
+                            <option value="update">update</option>
+                            <option value="delete">delete</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">Mode</label>
+                        <select class="form-select form-select-sm" th:field="*{policyPreset}">
+                            <option value="custom">custom expr</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Policy name</label>
+                        <input class="form-control form-control-sm" th:field="*{policyName}" placeholder="select_blog_posts_auth_user">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">Role</label>
+                        <select class="form-select form-select-sm" th:field="*{policyRole}">
+                            <option value="">-- select role --</option>
+                            <option th:each="r : ${roleOptions}" th:value="${r}" th:text="${r}"></option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Resource</label>
+                        <input class="form-control form-control-sm" th:field="*{resourceName}" placeholder="resource">
+                    </div>
+                </div>
+
+                <div class="row g-2 mt-1">
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm">Tenant column</label>
+                        <input class="form-control form-control-sm" th:field="*{tenantColumn}" placeholder="tenant_id">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" th:field="*{companyOnlyForWrite}">
+                            <label class="form-check-label small">COMPANY for write</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end gap-3">
+                        <div class="form-check"><input class="form-check-input" type="checkbox" th:field="*{comboSelect}"><label class="form-check-label small">combo select</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" th:field="*{comboInsert}"><label class="form-check-label small">combo insert</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" th:field="*{comboUpdate}"><label class="form-check-label small">combo update</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" th:field="*{comboDelete}"><label class="form-check-label small">combo delete</label></div>
+                    </div>
+                </div>
+
+                <div class="row g-2 mt-1">
+                    <div class="col-md-6 policy-using-controls">
+                        <label class="form-label form-label-sm">USING template (optional)</label>
+                        <select class="form-select form-select-sm policy-condition-template" data-target="customUsingExpr">
+                            <option value="">-- select template --</option>
+                            <option value="tenant_match">tenant_id = auth.fun_auth_current_tenant_id()</option>
+                            <option value="perm_view">auth.fun_auth__has_permission('resource'::text, 'view'::text)</option>
+                            <option value="perm_update">auth.fun_auth__has_permission('resource'::text, 'update'::text)</option>
+                            <option value="perm_delete">auth.fun_auth__has_permission('resource'::text, 'delete'::text)</option>
+                            <option value="company_only">auth.fun_tenant_type_is('COMPANY'::text)</option>
+                            <option value="tenant_and_view">tenant_id = auth.fun_auth_current_tenant_id() AND auth.fun_auth__has_permission('resource'::text, 'view'::text)</option>
+                        </select>
+                        <label class="form-label form-label-sm">Custom USING (optional)</label>
+                        <input class="form-control form-control-sm" th:field="*{customUsingExpr}" placeholder="tenant_id = auth.fun_auth_current_tenant_id()">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label form-label-sm">WITH CHECK template (optional)</label>
+                        <select class="form-select form-select-sm policy-condition-template" data-target="customWithCheckExpr">
+                            <option value="">-- select template --</option>
+                            <option value="tenant_match">tenant_id = auth.fun_auth_current_tenant_id()</option>
+                            <option value="perm_create">auth.fun_auth__has_permission('resource'::text, 'create'::text)</option>
+                            <option value="perm_update">auth.fun_auth__has_permission('resource'::text, 'update'::text)</option>
+                            <option value="company_only">auth.fun_tenant_type_is('COMPANY'::text)</option>
+                            <option value="allow_true">true</option>
+                            <option value="tenant_create_company">tenant_id = auth.fun_auth_current_tenant_id() AND auth.fun_auth__has_permission('resource'::text, 'create'::text) AND auth.fun_tenant_type_is('COMPANY'::text)</option>
+                        </select>
+                        <label class="form-label form-label-sm">Custom WITH CHECK (optional)</label>
+                        <input class="form-control form-control-sm" th:field="*{customWithCheckExpr}" placeholder="true">
+                    </div>
+                </div>
+
+                <div class="mt-2 d-flex gap-2">
+                    <button class="btn btn-outline-primary btn-sm" type="submit" th:formaction="@{/schemas/policy/editor/preview}" name="mode" value="single">Add 1 action to editor</button>
+                    <button class="btn btn-outline-secondary btn-sm" type="submit" th:formaction="@{/schemas/policy/editor/preview}" name="mode" value="combo">Add combo to editor</button>
+                </div>
+
+                <div class="mt-3">
+                    <label class="form-label form-label-sm">Policy SQL editor (editable)</label>
+                    <textarea class="form-control form-control-sm sql-editor" rows="8" th:field="*{policyEditorSql}" placeholder="CREATE POLICY ...;"></textarea>
+                    <button class="btn btn-success btn-sm mt-2" type="submit" th:formaction="@{/schemas/policy/editor/apply}">Apply edited SQL</button>
+                </div>
+            </form>
+            <div class="border rounded p-3 mt-3 bg-light" th:if="${!rlsEnabled}">
+                <span class="small text-muted">Enable RLS to show the policy creation editor.</span>
+            </div>
+
+            <div class="mt-3" th:if="${policySqlPreview != null}">
+                <label class="form-label form-label-sm">Last policy SQL</label>
+                <textarea class="form-control form-control-sm" rows="6" readonly th:text="${policySqlPreview}"></textarea>
+            </div>
+
+            <hr class="my-4">
+            <h6 class="mb-2">Existing policies</h6>
+            <div th:if="${#lists.isEmpty(policies)}" class="text-muted small">No policies for this table.</div>
+
+            <div th:each="p : ${policies}" class="border rounded p-2 mb-2 bg-light">
+                <div class="small mb-2">
+                    <strong th:text="${p.name}">policy_name</strong>
+                    <span class="ms-2 badge bg-secondary" th:text="${p.command}">SELECT</span>
+                    <span class="ms-2 text-muted" th:text="|roles: ${p.roles}|">roles</span>
+                </div>
+
+                <form method="post" th:action="@{/schemas/policy/update}">
+                    <input type="hidden" name="schema" th:value="${selectedSchema}">
+                    <input type="hidden" name="table" th:value="${selectedTable}">
+                    <input type="hidden" name="policyName" th:value="${p.name}">
+                    <textarea class="form-control form-control-sm" name="policySql" rows="5" th:text="${p.definitionSql}"></textarea>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-outline-primary btn-sm" type="submit" th:formaction="@{/schemas/policy/update}">Update policy</button>
+                        <button class="btn btn-outline-danger btn-sm" type="submit" th:formaction="@{/schemas/policy/delete}" onclick="return confirm('Delete this policy?');">Delete policy</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Forms de delete de índice (fora do form principal para evitar aninhamento) -->
     <th:block th:each="idx : ${indexes}">
         <form th:id="'del-idx-' + ${idx.name}"
@@ -290,6 +488,7 @@
                         <li><hr class="dropdown-divider"></li>
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="gen_random_uuid()">gen_random_uuid()</button></li>
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="auth.fun_auth_user_id()">auth.fun_auth_user_id()</button></li>
+                        <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="uuid" data-default-value="auth.fun_auth_current_tenant_id()">auth.fun_auth_current_tenant_id()</button></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><button class="dropdown-item default-suggestion" type="button" data-default-kind="text" data-default-value="''">'' (vazio)</button></li>
                     </ul>
@@ -304,21 +503,24 @@
                     <td class="text-center">
                         <input class="form-check-input" type="checkbox" name="columns[__INDEX__].unique">
                     </td>
-                    <td style="min-width: 260px;">
-                        <!-- FK selects -->
-                        <div class="d-flex flex-row align-items-center gap-2 flex-wrap">
-                            <div class="form-check mb-1 me-2">
-                                <input class="form-check-input" type="checkbox" name="columns[__INDEX__].foreignKey">
-                                <label class="form-check-label small">FK</label>
-                            </div>
-                            <div class="d-flex flex-row gap-1 flex-wrap">
-                                <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;" name="columns[__INDEX__].refSchema">
+                    <td style="min-width: 320px;">
+                        <div class="form-check mb-1">
+                            <input class="form-check-input fk-toggle" type="checkbox" name="columns[__INDEX__].foreignKey">
+                            <label class="form-check-label small">Enable FK</label>
+                        </div>
+                        <div class="fk-config row g-1 d-none">
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-schema-select w-100" name="columns[__INDEX__].refSchema">
                                     <option value="">schema</option>
                                 </select>
-                                <select class="form-select form-select-sm fk-select fk-table-select" style="width: 130px;" name="columns[__INDEX__].refTable">
+                            </div>
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-table-select w-100" name="columns[__INDEX__].refTable">
                                     <option value="">table</option>
                                 </select>
-                                <select class="form-select form-select-sm fk-select fk-column-select" style="width: 130px;" name="columns[__INDEX__].refColumn">
+                            </div>
+                            <div class="col-4">
+                                <select class="form-select form-select-sm fk-select fk-column-select w-100" name="columns[__INDEX__].refColumn">
                                     <option value="">column</option>
                                 </select>
                             </div>

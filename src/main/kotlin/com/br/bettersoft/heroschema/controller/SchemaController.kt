@@ -4,6 +4,7 @@ import com.br.bettersoft.heroschema.dtos.ColumnFormDto
 import com.br.bettersoft.heroschema.dtos.ColumnWithConstraintsDto
 import com.br.bettersoft.heroschema.dtos.SchemaWithTablesDto
 import com.br.bettersoft.heroschema.dtos.TableEditFormDto
+import com.br.bettersoft.heroschema.dtos.TablePermissionsFormDto
 import com.br.bettersoft.heroschema.repository.MetadataRepository
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Controller
@@ -133,7 +134,11 @@ class SchemaController(
         val columns = repo.listColumns(schema, table)
         val constraints = repo.getTableConstraints(schema, table)
         val allSchemas = repo.listSchemas()
+        val roles = repo.listRoles()
         val indexes = repo.listIndexes(schema, table)
+        val policies = repo.listPolicies(schema, table)
+        val tableGrants = repo.listTableGrants(schema, table)
+        val rlsEnabled = repo.isRlsEnabled(schema, table)
 
         val formColumns = columns.map { col ->
             val isPk = constraints.primaryKeyColumns.contains(col.name)
@@ -162,6 +167,17 @@ class SchemaController(
             columns = formColumns
         )
 
+        val permissionsForm = TablePermissionsFormDto(
+            schema = schema,
+            table = table,
+            sequenceName = "${table}_id_seq",
+            resourceName = table,
+            policyName = "select_$table",
+            policyPreset = "custom",
+            policyAction = "select",
+            policyEditorSql = "-- Fill USING and/or WITH CHECK"
+        )
+
         // Common PostgreSQL column types for the type <select>
         val typeOptions = listOf(
             "integer",
@@ -188,7 +204,14 @@ class SchemaController(
         model.addAttribute("form", form)
         model.addAttribute("typeOptions", typeOptions)
         model.addAttribute("schemaOptions", allSchemas)
+        model.addAttribute("roleOptions", roles)
         model.addAttribute("indexes", indexes)
+        model.addAttribute("policies", policies)
+        model.addAttribute("tableGrants", tableGrants)
+        model.addAttribute("rlsEnabled", rlsEnabled)
+        if (!model.containsAttribute("permissionsForm")) {
+            model.addAttribute("permissionsForm", permissionsForm)
+        }
         model.addAttribute("content", "fragments/table-edit")
         return "layout"
     }
@@ -400,6 +423,373 @@ class SchemaController(
             "redirect:/schemas/edit?schema=$schema&table=$table"
         }
     }
+
+    @PostMapping("/permissions/preview")
+    fun previewPermissions(
+        @ModelAttribute permissionsForm: TablePermissionsFormDto,
+        redirect: RedirectAttributes
+    ): String {
+        val schema = permissionsForm.schema
+        val table = permissionsForm.table
+
+        return try {
+            val sql = buildPermissionsSql(permissionsForm)
+            redirect.addFlashAttribute("permissionSqlPreview", sql)
+            redirect.addFlashAttribute("message", "Permissions SQL generated")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error generating permissions SQL: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/permissions/apply")
+    fun applyPermissions(
+        @ModelAttribute permissionsForm: TablePermissionsFormDto,
+        redirect: RedirectAttributes
+    ): String {
+        val schema = permissionsForm.schema
+        val table = permissionsForm.table
+
+        return try {
+            val sql = buildPermissionsSql(permissionsForm)
+            repo.executeTableSql(sql)
+            redirect.addFlashAttribute("permissionSqlPreview", sql)
+            redirect.addFlashAttribute("message", "Permissions updated for $schema.$table")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error applying permissions: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/grant/table/apply")
+    fun applyTableGrant(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam grantee: String,
+        @RequestParam(defaultValue = "false") grantSelect: Boolean,
+        @RequestParam(defaultValue = "false") grantInsert: Boolean,
+        @RequestParam(defaultValue = "false") grantUpdate: Boolean,
+        @RequestParam(defaultValue = "false") grantDelete: Boolean,
+        redirect: RedirectAttributes
+    ): String {
+        val privileges = mutableListOf<String>()
+        if (grantSelect) privileges.add("SELECT")
+        if (grantInsert) privileges.add("INSERT")
+        if (grantUpdate) privileges.add("UPDATE")
+        if (grantDelete) privileges.add("DELETE")
+
+        if (grantee.isBlank() || privileges.isEmpty()) {
+            redirect.addFlashAttribute("error", "Select role and at least one privilege")
+            return "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+
+        return try {
+            repo.grantTablePrivileges(schema, table, grantee, privileges)
+            redirect.addFlashAttribute("message", "Granted ${privileges.joinToString(",")} on $schema.$table to $grantee")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error applying grant: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/grant/table/revoke")
+    fun revokeTableGrant(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam grantee: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.revokeAllTablePrivileges(schema, table, grantee)
+            redirect.addFlashAttribute("message", "Revoked table privileges from $grantee")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error revoking grant: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/rls/enable")
+    fun enableRls(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.enableRls(schema, table)
+            redirect.addFlashAttribute("message", "RLS enabled for $schema.$table")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error enabling RLS: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/rls/disable")
+    fun disableRls(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.disableRls(schema, table)
+            redirect.addFlashAttribute("message", "RLS disabled for $schema.$table")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error disabling RLS: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/policy/create/editor")
+    fun createPolicy(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam policySql: String,
+        redirect: RedirectAttributes
+    ): String {
+        if (!repo.isRlsEnabled(schema, table)) {
+            redirect.addFlashAttribute("error", "Enable RLS before creating policies")
+            return "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+
+        return try {
+            val normalizedSql = policySql.trim().let { if (it.endsWith(";")) it else "$it;" }
+            if (normalizedSql.isBlank()) {
+                throw IllegalArgumentException("Policy SQL cannot be empty")
+            }
+            repo.executeTableSql(normalizedSql)
+            redirect.addFlashAttribute("policySqlPreview", normalizedSql)
+            redirect.addFlashAttribute("message", "Policy created")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error creating policy: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/policy/editor/preview")
+    fun previewPolicyEditor(
+        @ModelAttribute permissionsForm: TablePermissionsFormDto,
+        @RequestParam(defaultValue = "single") mode: String,
+        redirect: RedirectAttributes
+    ): String {
+        val schema = permissionsForm.schema
+        val table = permissionsForm.table
+
+        if (!repo.isRlsEnabled(schema, table)) {
+            redirect.addFlashAttribute("error", "Enable RLS before creating policies")
+            return "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+
+        return try {
+            val builtSql = if (mode == "combo") {
+                buildComboPoliciesSql(permissionsForm)
+            } else {
+                buildPolicyByActionSql(permissionsForm, permissionsForm.policyAction)
+            }
+
+            val existing = permissionsForm.policyEditorSql?.trim().orEmpty()
+                .let { if (it == "-- Fill USING and/or WITH CHECK") "" else it }
+            val merged = if (existing.isBlank()) builtSql else "$existing\n\n$builtSql"
+            permissionsForm.policyEditorSql = merged
+
+            redirect.addFlashAttribute("policySqlPreview", builtSql)
+            redirect.addFlashAttribute("permissionsForm", permissionsForm)
+            redirect.addFlashAttribute("message", "Policy SQL added to editor")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("permissionsForm", permissionsForm)
+            redirect.addFlashAttribute("error", "Error building policy SQL: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/policy/editor/apply")
+    fun applyPolicyEditor(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam policyEditorSql: String,
+        redirect: RedirectAttributes
+    ): String {
+        if (!repo.isRlsEnabled(schema, table)) {
+            redirect.addFlashAttribute("error", "Enable RLS before applying policies")
+            return "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+
+        return try {
+            val normalizedSql = policyEditorSql.trim()
+            if (normalizedSql.isBlank()) {
+                throw IllegalArgumentException("Policy editor is empty")
+            }
+
+            // Execute exactly what user edited in the SQL editor.
+            repo.executeTableSql(normalizedSql)
+            redirect.addFlashAttribute("policySqlPreview", normalizedSql)
+            redirect.addFlashAttribute("message", "Policy SQL applied")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("policySqlPreview", policyEditorSql)
+            redirect.addFlashAttribute("error", "Error applying policy SQL: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/policy/delete")
+    fun deletePolicy(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam policyName: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.dropPolicy(schema, table, policyName)
+            redirect.addFlashAttribute("message", "Policy $policyName removed")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error removing policy: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    @PostMapping("/policy/update")
+    fun updatePolicy(
+        @RequestParam schema: String,
+        @RequestParam table: String,
+        @RequestParam policyName: String,
+        @RequestParam policySql: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            val normalizedSql = policySql.trim().let { if (it.endsWith(";")) it else "$it;" }
+            val sql = "DROP POLICY IF EXISTS \"$policyName\" ON \"$schema\".\"$table\";\n$normalizedSql"
+            repo.executeTableSql(sql)
+            redirect.addFlashAttribute("message", "Policy $policyName updated")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error updating policy: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
+        }
+    }
+
+    private fun buildPermissionsSql(form: TablePermissionsFormDto): String {
+        val schema = form.schema
+        val table = form.table
+        val fullTable = "$schema.$table"
+        val stmts = mutableListOf<String>()
+
+        if (form.grantAnonSelect) {
+            stmts.add("GRANT SELECT ON TABLE $fullTable TO anon")
+        }
+
+        val authUserGrants = mutableListOf<String>()
+        if (form.grantAuthUserSelect) authUserGrants.add("SELECT")
+        if (form.grantAuthUserInsert) authUserGrants.add("INSERT")
+        if (form.grantAuthUserDelete) authUserGrants.add("DELETE")
+        if (form.grantAuthUserUpdate) authUserGrants.add("UPDATE")
+        if (authUserGrants.isNotEmpty()) {
+            stmts.add("GRANT ${authUserGrants.joinToString(",")} ON TABLE $fullTable TO auth_user")
+        }
+
+        val seqName = form.sequenceName?.trim().orEmpty()
+        if (seqName.isNotEmpty()) {
+            val seqGrants = mutableListOf<String>()
+            if (form.grantSequenceUsage) seqGrants.add("USAGE")
+            if (form.grantSequenceSelect) seqGrants.add("SELECT")
+            if (seqGrants.isNotEmpty()) {
+                stmts.add("GRANT ${seqGrants.joinToString(", ")} ON SEQUENCE $schema.$seqName TO auth_user")
+            }
+        }
+
+        if (stmts.isEmpty()) {
+            return "-- No grants selected"
+        }
+
+        return stmts.joinToString(";\n") + ";"
+    }
+
+    private fun buildComboPoliciesSql(form: TablePermissionsFormDto): String {
+        val actions = linkedSetOf<String>()
+        actions.add(form.policyAction.lowercase())
+        if (form.comboSelect) actions.add("select")
+        if (form.comboInsert) actions.add("insert")
+        if (form.comboUpdate) actions.add("update")
+        if (form.comboDelete) actions.add("delete")
+
+        if (actions.isEmpty()) {
+            throw IllegalArgumentException("Select at least one action for combo")
+        }
+
+        val basePolicyName = form.policyName.trim()
+        if (basePolicyName.isBlank()) {
+            throw IllegalArgumentException("Policy name is required")
+        }
+        val roleSlug = form.policyRole.ifBlank { "auth_user" }.lowercase().replace(" ", "_")
+        val tableName = form.table
+
+        val sqlParts = actions.map { action ->
+            val actionPolicyName = if (actions.size == 1) {
+                basePolicyName
+            } else {
+                "${action}_${tableName}_${roleSlug}"
+            }
+            buildPolicyByActionSql(form, action, actionPolicyName)
+        }
+
+        return "-- Selected actions: ${actions.joinToString(", ")}" + "\n" + sqlParts.joinToString("\n\n")
+    }
+
+    private fun buildPolicyByActionSql(
+        form: TablePermissionsFormDto,
+        actionRaw: String,
+        policyNameOverride: String? = null
+    ): String {
+        val schema = form.schema
+        val table = form.table
+        val action = actionRaw.lowercase()
+        val role = form.policyRole.ifBlank { "auth_user" }
+
+        val policyName = policyNameOverride?.trim().orEmpty().ifBlank { form.policyName.trim() }
+        val fullTable = "$schema.$table"
+
+        if (policyName.isBlank()) {
+            throw IllegalArgumentException("Policy name is required")
+        }
+
+        if (form.policyPreset != "custom") {
+            throw IllegalArgumentException("Use custom mode")
+        }
+
+        val customUsing = form.customUsingExpr?.trim().orEmpty()
+        val customWithCheck = form.customWithCheckExpr?.trim().orEmpty()
+        if (customUsing.isBlank() && customWithCheck.isBlank()) {
+            throw IllegalArgumentException("For custom mode, fill USING and/or WITH CHECK")
+        }
+
+        val sb = StringBuilder()
+        sb.append("CREATE POLICY $policyName ON $fullTable\n")
+            .append("  FOR ${action.uppercase()} TO $role")
+
+        when (action) {
+            "insert" -> {
+                if (customWithCheck.isNotBlank()) sb.append(" WITH CHECK ($customWithCheck)")
+            }
+            "update" -> {
+                if (customUsing.isNotBlank()) sb.append(" USING ($customUsing)")
+                if (customWithCheck.isNotBlank()) sb.append(" WITH CHECK ($customWithCheck)")
+            }
+            else -> {
+                if (customUsing.isNotBlank()) sb.append(" USING ($customUsing)")
+            }
+        }
+        sb.append(";")
+        return sb.toString()
+    }
+
+
 
     @PostMapping("/index/delete")
     fun deleteIndex(
