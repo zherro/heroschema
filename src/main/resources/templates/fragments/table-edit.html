@@ -98,8 +98,7 @@
                                        th:field="*{columns[__${iter.index}__].foreignKey}">
                                 <label class="form-check-label small">FK</label>
                             </div>
-                            <div class="d-flex flex-row gap-1 flex-wrap"
-                                 th:if="*{columns[__${iter.index}__].foreignKey}">
+                            <div class="d-flex flex-row gap-1 flex-wrap">
                                 <select class="form-select form-select-sm fk-select fk-schema-select" style="width: 130px;"
                                     th:field="*{columns[__${iter.index}__].refSchema}">
                                     <option value="">schema</option>

@@ -195,6 +195,11 @@ class SchemaController(
 
     // --- JSON helpers for FK selects (searchable schema/table/column) ---
 
+    @GetMapping("/fk/schemas", produces = [MediaType.APPLICATION_JSON_VALUE])
+    @ResponseBody
+    fun fkSchemas(): List<String> =
+        repo.listSchemas()
+
     @GetMapping("/fk/tables", produces = [MediaType.APPLICATION_JSON_VALUE])
     @ResponseBody
     fun fkTables(@RequestParam schema: String): List<String> =

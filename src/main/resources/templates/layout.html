@@ -151,6 +151,42 @@
                 return;
             }
 
+            function loadFkSchemas(callback) {
+                if (Array.isArray(window.__fkSchemasCache)) {
+                    callback(window.__fkSchemasCache);
+                    return;
+                }
+
+                jQuery.getJSON('/schemas/fk/schemas')
+                    .done(function (data) {
+                        window.__fkSchemasCache = Array.isArray(data) ? data : [];
+                        callback(window.__fkSchemasCache);
+                    })
+                    .fail(function () {
+                        callback([]);
+                    });
+            }
+
+            function populateSchemaSelects(schemas) {
+                jQuery('.fk-schema-select').each(function () {
+                    var $schemaSel = jQuery(this);
+                    var selected = $schemaSel.val();
+                    var hasRealOptions = $schemaSel.find('option').length > 1;
+                    if (hasRealOptions) {
+                        return;
+                    }
+
+                    $schemaSel.empty().append(new Option('schema', '', false, false));
+                    schemas.forEach(function (s) {
+                        var isSelected = selected === s;
+                        $schemaSel.append(new Option(s, s, isSelected, isSelected));
+                    });
+                    $schemaSel.trigger('change.select2');
+                });
+            }
+
+            loadFkSchemas(populateSchemaSelects);
+
             // Apply Select2 to all FK selects (existing + newly added rows)
             jQuery('.fk-select').each(function () {
                 var $sel = jQuery(this);
