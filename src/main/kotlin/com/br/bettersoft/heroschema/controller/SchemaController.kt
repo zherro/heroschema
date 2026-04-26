@@ -218,7 +218,6 @@ class SchemaController(
 
         val existingColumns = repo.listColumns(schema, table)
         val constraints = repo.getTableConstraints(schema, table)
-        val existingIndexes = repo.listIndexes(schema, table)
 
         val existingByName = existingColumns.associateBy { it.name }
 
@@ -236,10 +235,10 @@ class SchemaController(
             if (existing == null && newName.isNotBlank()) {
                 // New column
                 val sb = StringBuilder()
-                sb.append("ALTER TABLE $fullTable ADD COLUMN \"${'$'}newName\" ${'$'}{colForm.type}")
+                sb.append("ALTER TABLE $fullTable ADD COLUMN \"$newName\" ${colForm.type}")
                 if (!colForm.nullable) sb.append(" NOT NULL")
                 colForm.defaultValue?.takeIf { it.isNotBlank() }?.let {
-                    sb.append(" DEFAULT ${'$'}it")
+                    sb.append(" DEFAULT $it")
                 }
                 statements.add(sb.toString())
             } else if (existing != null) {
@@ -247,22 +246,22 @@ class SchemaController(
 
                 // Rename
                 if (newName.isNotBlank() && newName != currentName) {
-                    statements.add("ALTER TABLE $fullTable RENAME COLUMN \"${'$'}currentName\" TO \"${'$'}newName\"")
+                    statements.add("ALTER TABLE $fullTable RENAME COLUMN \"$currentName\" TO \"$newName\"")
                 }
 
                 val effectiveName = if (newName.isNotBlank()) newName else currentName
 
                 // Type change
                 if (colForm.type.isNotBlank() && colForm.type != existing.type) {
-                    statements.add("ALTER TABLE $fullTable ALTER COLUMN \"${'$'}effectiveName\" TYPE ${'$'}{colForm.type}")
+                    statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" TYPE ${colForm.type}")
                 }
 
                 // Nullability
                 if (colForm.nullable != existing.nullable) {
                     if (colForm.nullable) {
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"${'$'}effectiveName\" DROP NOT NULL")
+                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" DROP NOT NULL")
                     } else {
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"${'$'}effectiveName\" SET NOT NULL")
+                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" SET NOT NULL")
                     }
                 }
 
@@ -271,9 +270,9 @@ class SchemaController(
                 val currDefault = existing.defaultValue?.takeIf { it.isNotBlank() }
                 if (newDefault != currDefault) {
                     if (newDefault == null) {
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"${'$'}effectiveName\" DROP DEFAULT")
+                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" DROP DEFAULT")
                     } else {
-                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"${'$'}effectiveName\" SET DEFAULT ${'$'}newDefault")
+                        statements.add("ALTER TABLE $fullTable ALTER COLUMN \"$effectiveName\" SET DEFAULT $newDefault")
                     }
                 }
 
@@ -282,8 +281,8 @@ class SchemaController(
                 val currComment = existing.comment?.takeIf { it.isNotBlank() }
                 if (newComment != currComment) {
                     val commentSql = newComment?.let {
-                        "COMMENT ON COLUMN $fullTable.\"${'$'}effectiveName\" IS '${'$'}{it.replace(\"'\", \"''\")}'"
-                    } ?: "COMMENT ON COLUMN $fullTable.\"${'$'}effectiveName\" IS NULL"
+                        "COMMENT ON COLUMN $fullTable.\"$effectiveName\" IS '${it.replace("'", "''")}'"
+                    } ?: "COMMENT ON COLUMN $fullTable.\"$effectiveName\" IS NULL"
                     statements.add(commentSql)
                 }
             }
@@ -297,15 +296,15 @@ class SchemaController(
         val currentPkColumns = constraints.primaryKeyColumns
 
         val pkName = constraints.primaryKeyConstraintName
-            ?: if (desiredPkColumns.isNotEmpty() || currentPkColumns.isNotEmpty()) "pk_${'$'}table" else null
+            ?: if (desiredPkColumns.isNotEmpty() || currentPkColumns.isNotEmpty()) "pk_$table" else null
 
         if (pkName != null && currentPkColumns != desiredPkColumns) {
             if (currentPkColumns.isNotEmpty()) {
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${'$'}pkName\"")
+                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"$pkName\"")
             }
             if (desiredPkColumns.isNotEmpty()) {
-                val colsList = desiredPkColumns.joinToString(", ") { "\"${'$'}it\"" }
-                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"${'$'}pkName\" PRIMARY KEY (${'$'}colsList)")
+                val colsList = desiredPkColumns.joinToString(", ") { "\"$it\"" }
+                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"$pkName\" PRIMARY KEY ($colsList)")
             }
         }
 
@@ -316,9 +315,9 @@ class SchemaController(
             val existingConstraintName = constraints.uniqueColumns[colName]
 
             if (!hasUniqueNow && existingConstraintName != null) {
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${'$'}existingConstraintName\"")
+                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"$existingConstraintName\"")
             } else if (hasUniqueNow && existingConstraintName == null) {
-                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"uq_${'$'}table_${'$'}colName\" UNIQUE (\"${'$'}colName\")")
+                statements.add("ALTER TABLE $fullTable ADD CONSTRAINT \"uq_${table}_$colName\" UNIQUE (\"$colName\")")
             }
         }
 
@@ -332,7 +331,7 @@ class SchemaController(
                     !colForm.refColumn.isNullOrBlank()
 
             if (!wantsFk && currentFk != null) {
-                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${'$'}{currentFk.constraintName}\"")
+                statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${currentFk.constraintName}\"")
             } else if (wantsFk && hasAllRef) {
                 val refChanged = currentFk == null ||
                         currentFk.refSchema != colForm.refSchema ||
@@ -340,14 +339,14 @@ class SchemaController(
                         currentFk.refColumn != colForm.refColumn
 
                 if (currentFk != null && refChanged) {
-                    statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${'$'}{currentFk.constraintName}\"")
+                    statements.add("ALTER TABLE $fullTable DROP CONSTRAINT \"${currentFk.constraintName}\"")
                 }
 
                 if (refChanged) {
-                    val fkName = currentFk?.constraintName ?: "fk_${'$'}table_${'$'}colName"
+                    val fkName = currentFk?.constraintName ?: "fk_${table}_$colName"
                     statements.add(
-                        "ALTER TABLE $fullTable ADD CONSTRAINT \"${'$'}fkName\" FOREIGN KEY (\"${'$'}colName\") " +
-                                "REFERENCES \"${'$'}{colForm.refSchema}\".\"${'$'}{colForm.refTable}\"(\"${'$'}{colForm.refColumn}\")"
+                        "ALTER TABLE $fullTable ADD CONSTRAINT \"$fkName\" FOREIGN KEY (\"$colName\") " +
+                                "REFERENCES \"${colForm.refSchema}\".\"${colForm.refTable}\"(\"${colForm.refColumn}\")"
                     )
                 }
             }
@@ -355,10 +354,8 @@ class SchemaController(
 
         if (statements.isEmpty()) {
             redirect.addFlashAttribute("message", "No changes to apply")
-            return "redirect:/schemas?schema=${'$'}schema&table=${'$'}table"
+            return "redirect:/schemas?schema=$schema&table=$table"
         }
-
-        val sql = statements.joinToString(";\n") + ";"
 
         // Handle new index creation (composite, unique, partial)
         val newIndexName = form.newIndexName?.trim().orEmpty()
@@ -370,24 +367,26 @@ class SchemaController(
             val colsSql = newIndexColumns.split(',')
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .joinToString(", ") { "\"${'$'}it\"" }
+                .joinToString(", ") { "\"$it\"" }
 
             if (colsSql.isNotEmpty()) {
                 val uniqueSql = if (newIndexUnique) "UNIQUE " else ""
-                val whereSql = if (newIndexWhere.isNotEmpty()) " WHERE ${'$'}newIndexWhere" else ""
+                val whereSql = if (newIndexWhere.isNotEmpty()) " WHERE $newIndexWhere" else ""
                 val idxSql =
-                    "CREATE ${'$'}uniqueSqlINDEX \"${'$'}newIndexName\" ON $fullTable (${'$'}colsSql)${'$'}whereSql"
+                    "CREATE ${uniqueSql}INDEX \"$newIndexName\" ON $fullTable ($colsSql)$whereSql"
                 statements.add(idxSql)
             }
         }
 
+        val sql = statements.joinToString(";\n") + ";"
+
         return try {
             repo.executeTableSql(sql)
-            redirect.addFlashAttribute("message", "Table ${'$'}schema.${'$'}table updated")
-            "redirect:/schemas?schema=${'$'}schema&table=${'$'}table"
+            redirect.addFlashAttribute("message", "Table $schema.$table updated")
+            "redirect:/schemas?schema=$schema&table=$table"
         } catch (ex: Exception) {
-            redirect.addFlashAttribute("error", "Error updating table: ${'$'}{ex.message}")
-            "redirect:/schemas/edit?schema=${'$'}schema&table=${'$'}table"
+            redirect.addFlashAttribute("error", "Error updating table: ${ex.message}")
+            "redirect:/schemas/edit?schema=$schema&table=$table"
         }
     }
 
