@@ -14,13 +14,12 @@ CREATE OR REPLACE FUNCTION auth.fun_auth_current_tenant_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
-AS $$
+AS $function$
 SELECT
-    nullif(
-            current_setting('request.jwt.claim.tenant_id', true),
-            ''
+    (
+        current_setting('request.jwt.claims', true)::json->>'tenant_id'
     )::uuid;
-$$;
+$function$;
 
 GRANT USAGE ON SCHEMA auth TO anon, auth_user;
 GRANT EXECUTE ON FUNCTION auth.fun_auth_current_tenant_id() TO anon, auth_user;

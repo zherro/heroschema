@@ -14,7 +14,7 @@ LANGUAGE sql
 STABLE
 AS $function$
 SELECT
-    current_setting('request.jwt.claim.tenant_type', true) = p_tenant_type;
+    (current_setting('request.jwt.claims', true)::json->>'tenant_type') = p_tenant_type
 $function$;
 
 GRANT USAGE ON SCHEMA auth TO anon, auth_user;

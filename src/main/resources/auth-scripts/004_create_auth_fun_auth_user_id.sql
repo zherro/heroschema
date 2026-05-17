@@ -13,9 +13,8 @@ LANGUAGE sql
 STABLE
 AS $function$
 SELECT
-    nullif(
-            current_setting('request.jwt.claim.user_id', true),
-            ''
+    (
+        current_setting('request.jwt.claims', true)::json->>'user_id'
     )::uuid;
 $function$;
 
