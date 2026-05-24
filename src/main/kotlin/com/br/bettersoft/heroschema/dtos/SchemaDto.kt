@@ -44,7 +44,8 @@ data class IndexDto(
     val unique: Boolean,
     val columns: String?,
     val whereClause: String?,
-    val constraintBacked: Boolean
+    val constraintBacked: Boolean,
+    val definitionSql: String? = null
 )
 
 data class PolicyDto(

@@ -219,6 +219,69 @@ class MetadataRepository(
         jdbc.execute(sql)
     }
 
+    fun getTableDdl(schema: String, table: String): String {
+        val columnsSql = jdbc.queryForObject(
+            """
+            SELECT string_agg(
+                       format(
+                           '  %I %s%s%s',
+                           a.attname,
+                           pg_catalog.format_type(a.atttypid, a.atttypmod),
+                           CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END,
+                           CASE WHEN ad.adbin IS NOT NULL THEN ' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END
+                       ),
+                       E',\n'
+                       ORDER BY a.attnum
+                   ) AS columns_sql
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+            WHERE n.nspname = ?
+              AND c.relname = ?
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            """.trimIndent(),
+            String::class.java,
+            schema,
+            table
+        )
+
+        if (columnsSql.isNullOrBlank()) {
+            return "-- Could not build DDL for $schema.$table"
+        }
+
+        val createSql = "CREATE TABLE \"$schema\".\"$table\" (\n$columnsSql\n);"
+
+        val constraintsSql = jdbc.query(
+            """
+            SELECT format(
+                'ALTER TABLE %I.%I ADD CONSTRAINT %I %s;',
+                n.nspname,
+                c.relname,
+                con.conname,
+                pg_get_constraintdef(con.oid, true)
+            ) AS constraint_sql
+            FROM pg_constraint con
+            JOIN pg_class c ON c.oid = con.conrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ?
+              AND c.relname = ?
+              AND con.contype IN ('p', 'u', 'f', 'c', 'x')
+            ORDER BY con.contype, con.conname
+            """.trimIndent(),
+            { rs, _ -> rs.getString("constraint_sql") },
+            schema,
+            table
+        ).filterNotNull()
+
+        return if (constraintsSql.isEmpty()) {
+            createSql
+        } else {
+            createSql + "\n\n" + constraintsSql.joinToString("\n")
+        }
+    }
+
     fun listPolicies(schema: String, table: String): List<PolicyDto> =
         jdbc.query(
             """
@@ -560,7 +623,8 @@ class MetadataRepository(
                     unique = unique,
                     columns = colsPart.ifBlank { null },
                     whereClause = wherePart,
-                    constraintBacked = constraintCount > 0
+                    constraintBacked = constraintCount > 0,
+                    definitionSql = if (def.endsWith(";")) def else "$def;"
                 )
             },
             schema,

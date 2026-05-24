@@ -1,8 +1,11 @@
 <div xmlns:th="http://www.thymeleaf.org">
-    <div class="card shadow-sm">
+    <div class="card shadow-sm" id="section-edit">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h3 class="mb-0">
-                Edit table
+                <a id="section-edit-title"
+                   class="ddl-focus-link text-decoration-none text-reset"
+                   data-focus-target="section-edit-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=section-edit-title#section-edit-title|">Edit table</a>
                 <span class="badge bg-secondary ms-2" th:text="${selectedSchema}">public</span>
                 <span class="ms-1" th:text="${selectedTable}">my_table</span>
             </h3>
@@ -235,9 +238,14 @@
         </div> <!-- card-body -->
     </div> <!-- card -->
 
-    <div class="card shadow-sm mt-3">
+    <div class="card shadow-sm mt-3" id="section-permissions">
         <div class="card-header">
-            <h5 class="mb-0">Permissions &amp; RLS</h5>
+            <h5 class="mb-0">
+                <a id="section-permissions-title"
+                   class="ddl-focus-link text-decoration-none text-reset"
+                   data-focus-target="section-permissions-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=section-permissions-title#section-permissions-title|">Permissions &amp; RLS</a>
+            </h5>
         </div>
         <div class="card-body">
             <div class="d-flex align-items-center gap-2 mb-3">
@@ -468,6 +476,70 @@
                         <button class="btn btn-outline-danger btn-sm" type="submit" th:formaction="@{/schemas/policy/delete}" onclick="return confirm('Delete this policy?');">Delete policy</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-3" id="section-ddl">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <a id="section-ddl-title"
+                   class="ddl-focus-link text-decoration-none text-reset"
+                   data-focus-target="section-ddl-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=section-ddl-title#section-ddl-title|">DDL</a>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="small mb-3 d-flex flex-wrap gap-3">
+                <a class="ddl-focus-link" data-focus-target="section-edit-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=section-edit-title#section-edit-title|">↑ Edit table</a>
+                <a class="ddl-focus-link" data-focus-target="section-permissions-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=section-permissions-title#section-permissions-title|">↑ Permissions &amp; RLS</a>
+                <a class="ddl-focus-link" data-focus-target="ddl-table-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-table-title#ddl-table-title|">Table DDL</a>
+                <a class="ddl-focus-link" data-focus-target="ddl-policies-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-policies-title#ddl-policies-title|">Policies DDL</a>
+                <a class="ddl-focus-link" data-focus-target="ddl-indexes-title"
+                   th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-indexes-title#ddl-indexes-title|">Indexes DDL</a>
+            </div>
+
+            <div class="border rounded p-3 mb-3" id="ddl-table-section">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">
+                        <a id="ddl-table-title"
+                           class="ddl-focus-link text-decoration-none"
+                           data-focus-target="ddl-table-title"
+                           th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-table-title#ddl-table-title|">Table DDL</a>
+                    </h6>
+                    <button type="button" class="btn btn-outline-secondary btn-sm copy-ddl-btn" data-copy-target="ddl-table-text">Copy</button>
+                </div>
+                <textarea id="ddl-table-text" class="form-control form-control-sm font-monospace" rows="10" readonly th:text="${tableDdl}"></textarea>
+            </div>
+
+            <div class="border rounded p-3 mb-3" id="ddl-policies-section">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">
+                        <a id="ddl-policies-title"
+                           class="ddl-focus-link text-decoration-none"
+                           data-focus-target="ddl-policies-title"
+                           th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-policies-title#ddl-policies-title|">Policies DDL</a>
+                    </h6>
+                    <button type="button" class="btn btn-outline-secondary btn-sm copy-ddl-btn" data-copy-target="ddl-policies-text">Copy</button>
+                </div>
+                <textarea id="ddl-policies-text" class="form-control form-control-sm font-monospace" rows="8" readonly th:text="${policiesDdl}"></textarea>
+            </div>
+
+            <div class="border rounded p-3" id="ddl-indexes-section">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">
+                        <a id="ddl-indexes-title"
+                           class="ddl-focus-link text-decoration-none"
+                           data-focus-target="ddl-indexes-title"
+                           th:href="|/schemas/edit?schema=${selectedSchema}&table=${selectedTable}&focus=ddl-indexes-title#ddl-indexes-title|">Indexes DDL</a>
+                    </h6>
+                    <button type="button" class="btn btn-outline-secondary btn-sm copy-ddl-btn" data-copy-target="ddl-indexes-text">Copy</button>
+                </div>
+                <textarea id="ddl-indexes-text" class="form-control form-control-sm font-monospace" rows="8" readonly th:text="${indexesDdl}"></textarea>
             </div>
         </div>
     </div>

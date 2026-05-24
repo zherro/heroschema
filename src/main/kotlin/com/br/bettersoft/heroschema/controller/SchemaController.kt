@@ -129,6 +129,7 @@ class SchemaController(
     fun editPage(
         @RequestParam schema: String,
         @RequestParam table: String,
+        @RequestParam(required = false) focus: String?,
         model: Model
     ): String {
         val columns = repo.listColumns(schema, table)
@@ -137,6 +138,17 @@ class SchemaController(
         val roles = repo.listRoles()
         val indexes = repo.listIndexes(schema, table)
         val policies = repo.listPolicies(schema, table)
+        val tableDdl = repo.getTableDdl(schema, table)
+        val policiesDdl = if (policies.isEmpty()) {
+            "-- No policies found for $schema.$table"
+        } else {
+            policies.joinToString("\n\n") { it.definitionSql }
+        }
+        val indexesDdl = indexes
+            .mapNotNull { it.definitionSql }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n\n")
+            ?: "-- No non-primary indexes found for $schema.$table"
         val tableGrants = repo.listTableGrants(schema, table)
         val defaultSequenceName = "${table}_id_seq"
         val sequenceGrants = repo.listSequenceGrants(schema, defaultSequenceName)
@@ -209,6 +221,10 @@ class SchemaController(
         model.addAttribute("roleOptions", roles)
         model.addAttribute("indexes", indexes)
         model.addAttribute("policies", policies)
+        model.addAttribute("tableDdl", tableDdl)
+        model.addAttribute("policiesDdl", policiesDdl)
+        model.addAttribute("indexesDdl", indexesDdl)
+        model.addAttribute("focusTarget", focus)
         model.addAttribute("tableGrants", tableGrants)
         model.addAttribute("defaultSequenceName", defaultSequenceName)
         model.addAttribute("sequenceGrants", sequenceGrants)

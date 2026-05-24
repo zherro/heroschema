@@ -490,6 +490,66 @@
         }
 
         bindPolicyComposerAutoSync();
+
+        function focusSectionTitle(targetId) {
+            if (!targetId) return;
+            var el = document.getElementById(targetId);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (typeof el.focus === 'function') {
+                el.focus({ preventScroll: true });
+            }
+        }
+
+        // Persist last DDL section selection so focus survives page refresh/redirect.
+        document.body.addEventListener('click', function (e) {
+            var titleLink = e.target.closest && e.target.closest('.ddl-focus-link');
+            if (titleLink) {
+                var targetId = titleLink.getAttribute('data-focus-target') || '';
+                if (targetId) {
+                    sessionStorage.setItem('schemasEditFocusTarget', targetId);
+                }
+            }
+
+            var copyBtn = e.target.closest && e.target.closest('.copy-ddl-btn');
+            if (!copyBtn) return;
+
+            var target = copyBtn.getAttribute('data-copy-target');
+            var source = target ? document.getElementById(target) : null;
+            if (!source) return;
+
+            var text = source.value || source.textContent || '';
+            if (!text.trim()) return;
+
+            function markCopied() {
+                var original = copyBtn.textContent;
+                copyBtn.textContent = 'Copied';
+                setTimeout(function () {
+                    copyBtn.textContent = original;
+                }, 1200);
+            }
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(markCopied);
+                return;
+            }
+
+            source.focus();
+            source.select();
+            document.execCommand('copy');
+            markCopied();
+        });
+
+        var params = new URLSearchParams(window.location.search);
+        var hashTarget = window.location.hash ? window.location.hash.substring(1) : '';
+        var queryTarget = params.get('focus') || '';
+        var storedTarget = sessionStorage.getItem('schemasEditFocusTarget') || '';
+        var initialTarget = hashTarget || queryTarget || storedTarget;
+        if (initialTarget) {
+            setTimeout(function () {
+                focusSectionTitle(initialTarget);
+            }, 60);
+        }
     });
 </script>
 
