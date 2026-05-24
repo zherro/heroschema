@@ -1,0 +1,53 @@
+<div xmlns:th="http://www.thymeleaf.org">
+	<div class="d-flex justify-content-between align-items-center mb-3">
+		<h3 class="mb-0">SQL Terminal</h3>
+		<span class="small text-muted">Execucao direta no banco por schema</span>
+	</div>
+
+	<div class="card mb-3">
+		<div class="card-body">
+			<div class="row g-2 align-items-end mb-2">
+				<div class="col-md-4 col-lg-3">
+					<label class="form-label small mb-1">Schema</label>
+					<select id="sql-terminal-schema" class="form-select form-select-sm" th:data-selected-schema="${selectedSchema}">
+						<option th:each="s : ${schemas}" th:value="${s}" th:text="${s}" th:selected="${s == selectedSchema}"></option>
+					</select>
+				</div>
+				<div class="col-md-3 col-lg-2">
+					<label class="form-label small mb-1">Max rows</label>
+					<input id="sql-terminal-max-rows" type="number" class="form-control form-control-sm" value="200" min="1" max="2000">
+				</div>
+				<div class="col-auto">
+					<button id="sql-terminal-run" class="btn btn-sm btn-primary" type="button">Run</button>
+				</div>
+				<div class="col-auto">
+					<button id="sql-terminal-clear" class="btn btn-sm btn-outline-secondary" type="button">Clear</button>
+				</div>
+				<div class="col-auto">
+					<button id="sql-terminal-copy" class="btn btn-sm btn-outline-secondary" type="button">Copy SQL</button>
+				</div>
+			</div>
+
+			<textarea id="sql-terminal-editor"
+					  class="sql-editor sql-editor-autocomplete"
+					  data-autocomplete-mode="sql-terminal"
+					  placeholder="Exemplo:
+SELECT * FROM user_data LIMIT 20;
+
+INSERT INTO user_data(name) VALUES ('novo') RETURNING id;
+
+SELECT auth.fun_auth_user_id();"></textarea>
+
+			<div id="sql-terminal-status" class="small mt-2 text-muted">Ready.</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-header py-2">
+			<strong>Results</strong>
+		</div>
+		<div id="sql-terminal-results" class="card-body">
+			<p class="text-muted small mb-0">Run a SQL script to see results.</p>
+		</div>
+	</div>
+</div>

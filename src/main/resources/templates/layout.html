@@ -16,8 +16,11 @@
     <!-- CodeMirror (SQL editor) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.css">
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/sql/sql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/sql-hint.min.js"></script>
 
     <style>
         .CodeMirror {
@@ -84,10 +87,23 @@
                     mode: 'text/x-sql',
                     lineNumbers: true,
                     theme: 'material',
-                    viewportMargin: Infinity
+                    viewportMargin: Infinity,
+                    extraKeys: {
+                        'Ctrl-Space': 'autocomplete'
+                    }
                 });
                 // Keep a direct reference for custom sync routines.
                 ta.__cm = cm;
+
+                if (ta.classList.contains('sql-editor-autocomplete')) {
+                    cm.on('inputRead', function (editor, change) {
+                        if (!change || !change.text || !change.text[0]) return;
+                        var token = change.text[0];
+                        if (/^[a-zA-Z0-9_\.]+$/.test(token)) {
+                            CodeMirror.commands.autocomplete(editor, null, { completeSingle: false });
+                        }
+                    });
+                }
             });
         }
 
@@ -490,6 +506,201 @@
         }
 
         bindPolicyComposerAutoSync();
+
+        function escapeHtml(text) {
+            return String(text || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function initSqlTerminal() {
+            var runBtn = document.getElementById('sql-terminal-run');
+            var clearBtn = document.getElementById('sql-terminal-clear');
+            var copyBtn = document.getElementById('sql-terminal-copy');
+            var schemaEl = document.getElementById('sql-terminal-schema');
+            var maxRowsEl = document.getElementById('sql-terminal-max-rows');
+            var editorEl = document.getElementById('sql-terminal-editor');
+            var statusEl = document.getElementById('sql-terminal-status');
+            var resultsEl = document.getElementById('sql-terminal-results');
+            if (!runBtn || !schemaEl || !editorEl || !resultsEl || !statusEl) return;
+
+            var editor = editorEl.__cm;
+            var hintsMap = {};
+
+            function updateStatus(msg, cls) {
+                statusEl.className = 'small mt-2 ' + (cls || 'text-muted');
+                statusEl.textContent = msg;
+            }
+
+            function getEditorValue() {
+                return editor ? editor.getValue() : editorEl.value;
+            }
+
+            function setEditorValue(value) {
+                if (editor) {
+                    editor.setValue(value);
+                } else {
+                    editorEl.value = value;
+                }
+            }
+
+            function renderResults(payload) {
+                if (!payload || !Array.isArray(payload.statements) || payload.statements.length === 0) {
+                    resultsEl.innerHTML = '<p class="text-muted small mb-0">No statement results.</p>';
+                    return;
+                }
+
+                var html = payload.statements.map(function (item, idx) {
+                    var header = '<div class="small text-muted mb-2">Statement #' + (idx + 1) +
+                        ' (' + escapeHtml(item.elapsedMs) + ' ms)</div>';
+                    var sql = '<pre class="small bg-light p-2 border rounded mb-2"><code>' + escapeHtml(item.statement) + '</code></pre>';
+
+                    if (item.kind === 'result_set') {
+                        var thead = '<thead><tr>' + (item.columns || []).map(function (c) {
+                            return '<th class="small">' + escapeHtml(c) + '</th>';
+                        }).join('') + '</tr></thead>';
+
+                        var tbody = '<tbody>' + (item.rows || []).map(function (row) {
+                            return '<tr>' + row.map(function (v) {
+                                return '<td class="small">' + escapeHtml(v == null ? 'NULL' : String(v)) + '</td>';
+                            }).join('') + '</tr>';
+                        }).join('') + '</tbody>';
+
+                        var table = '<div class="table-responsive"><table class="table table-sm table-striped table-bordered mb-0">' + thead + tbody + '</table></div>';
+                        return '<div class="mb-4">' + header + sql + '<div class="small mb-2">Rows: ' + escapeHtml(item.rowCount) + '</div>' + table + '</div>';
+                    }
+
+                    var msg = item.message || 'Statement executed';
+                    return '<div class="mb-4">' + header + sql + '<div class="alert alert-info py-2 px-3 small mb-0">' +
+                        escapeHtml(msg) + ' (affected rows: ' + escapeHtml(item.rowCount) + ')' +
+                        '</div></div>';
+                }).join('');
+
+                resultsEl.innerHTML = html;
+            }
+
+            function activeSchema() {
+                return schemaEl.value || schemaEl.getAttribute('data-selected-schema') || '';
+            }
+
+            function setupAutocompleteForSchema(schema) {
+                if (!schema || !editor || !window.CodeMirror || !CodeMirror.hint || !CodeMirror.hint.sql) {
+                    return;
+                }
+
+                if (hintsMap[schema]) {
+                    editor.setOption('hintOptions', { tables: hintsMap[schema] });
+                    return;
+                }
+
+                fetch('/sql-terminal/hints?schema=' + encodeURIComponent(schema))
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        var list = Array.isArray(data.suggestions) ? data.suggestions : [];
+                        hintsMap[schema] = { __global: list };
+                        editor.setOption('hintOptions', { tables: hintsMap[schema] });
+                    })
+                    .catch(function () {
+                        // Ignore autocomplete loading errors to avoid blocking query execution.
+                    });
+            }
+
+            if (schemaEl) {
+                schemaEl.addEventListener('change', function () {
+                    var schema = activeSchema();
+                    var currentUrl = new URL(window.location.href);
+                    currentUrl.searchParams.set('schema', schema);
+                    window.history.replaceState({}, '', currentUrl.toString());
+                    setupAutocompleteForSchema(schema);
+                });
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    setEditorValue('');
+                    resultsEl.innerHTML = '<p class="text-muted small mb-0">Editor cleared.</p>';
+                    updateStatus('Ready.', 'text-muted');
+                });
+            }
+
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function () {
+                    var text = getEditorValue();
+                    if (!text.trim()) return;
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(function () {
+                            updateStatus('SQL copied to clipboard.', 'text-success');
+                        }).catch(function () {
+                            updateStatus('Could not copy SQL automatically.', 'text-warning');
+                        });
+                        return;
+                    }
+                    editorEl.focus();
+                    editorEl.select();
+                    document.execCommand('copy');
+                    updateStatus('SQL copied to clipboard.', 'text-success');
+                });
+            }
+
+            if (editor) {
+                editor.on('keydown', function (cm, evt) {
+                    var runShortcut = (evt.ctrlKey || evt.metaKey) && evt.key === 'Enter';
+                    if (!runShortcut) return;
+                    evt.preventDefault();
+                    runBtn.click();
+                });
+            }
+
+            runBtn.addEventListener('click', function () {
+                var sql = getEditorValue();
+                var schema = activeSchema();
+                var maxRows = parseInt((maxRowsEl && maxRowsEl.value) || '200', 10);
+                if (!sql || !sql.trim()) {
+                    updateStatus('Type a SQL statement first.', 'text-danger');
+                    return;
+                }
+
+                runBtn.disabled = true;
+                updateStatus('Executing...', 'text-warning');
+
+                fetch('/sql-terminal/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        schema: schema,
+                        sql: sql,
+                        maxRows: maxRows
+                    })
+                })
+                    .then(function (resp) { return resp.json(); })
+                    .then(function (payload) {
+                        if (!payload.ok) {
+                            updateStatus(payload.error || 'Error executing SQL.', 'text-danger');
+                            resultsEl.innerHTML = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
+                                escapeHtml(payload.error || 'Error executing SQL.') + '</div>';
+                            return;
+                        }
+
+                        renderResults(payload);
+                        updateStatus('Executed ' + payload.statements.length + ' statement(s) on schema ' + payload.schema + '.', 'text-success');
+                    })
+                    .catch(function (err) {
+                        updateStatus('Request failed: ' + (err && err.message ? err.message : 'Unknown error'), 'text-danger');
+                    })
+                    .finally(function () {
+                        runBtn.disabled = false;
+                    });
+            });
+
+            setupAutocompleteForSchema(activeSchema());
+        }
+
+        initSqlTerminal();
 
         function focusSectionTitle(targetId) {
             if (!targetId) return;

@@ -6,10 +6,12 @@ import com.br.bettersoft.heroschema.dtos.ForeignKeyInfoDto
 import com.br.bettersoft.heroschema.dtos.TableConstraintsDto
 import com.br.bettersoft.heroschema.dtos.IndexDto
 import com.br.bettersoft.heroschema.dtos.PolicyDto
+import com.br.bettersoft.heroschema.dtos.SqlStatementResultDto
 import com.br.bettersoft.heroschema.dtos.TableGrantDto
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.Types
 
 @Repository
 class MetadataRepository(
@@ -53,6 +55,93 @@ class MetadataRepository(
             String::class.java
         )
 
+    fun listSqlColumns(schema: String): List<String> =
+        jdbc.queryForList(
+            """
+            SELECT DISTINCT c.column_name
+            FROM information_schema.columns c
+            WHERE c.table_schema = ?
+            ORDER BY c.column_name
+            """.trimIndent(),
+            String::class.java,
+            schema
+        )
+
+    fun listSqlFunctions(schema: String): List<String> =
+        jdbc.queryForList(
+            """
+            SELECT p.proname
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = ?
+            ORDER BY p.proname
+            """.trimIndent(),
+            String::class.java,
+            schema
+        )
+
+    fun executeSqlStatements(schema: String, statements: List<String>, maxRows: Int): List<SqlStatementResultDto> {
+        val safeMaxRows = maxRows.coerceIn(1, 2000)
+
+        val ds = jdbc.dataSource ?: error("DataSource not configured")
+        ds.connection.use { conn ->
+            conn.createStatement().use { setup ->
+                setup.execute("SET search_path TO \"$schema\", public")
+            }
+
+            return statements.map { statement ->
+                val startedAt = System.currentTimeMillis()
+
+                conn.createStatement().use { stmt ->
+                    stmt.maxRows = safeMaxRows
+                    val hasResult = stmt.execute(statement)
+                    val elapsed = System.currentTimeMillis() - startedAt
+
+                    if (hasResult) {
+                        stmt.resultSet.use { rs ->
+                            val meta = rs.metaData
+                            val columns = (1..meta.columnCount).map { idx ->
+                                meta.getColumnLabel(idx) ?: meta.getColumnName(idx)
+                            }
+
+                            val rows = mutableListOf<List<String?>>()
+                            while (rs.next()) {
+                                val row = (1..meta.columnCount).map { idx ->
+                                    if (meta.getColumnType(idx) == Types.BINARY ||
+                                        meta.getColumnType(idx) == Types.VARBINARY ||
+                                        meta.getColumnType(idx) == Types.LONGVARBINARY
+                                    ) {
+                                        "<binary>"
+                                    } else {
+                                        rs.getObject(idx)?.toString()
+                                    }
+                                }
+                                rows.add(row)
+                            }
+
+                            SqlStatementResultDto(
+                                statement = statement,
+                                kind = "result_set",
+                                rowCount = rows.size,
+                                columns = columns,
+                                rows = rows,
+                                elapsedMs = elapsed
+                            )
+                        }
+                    } else {
+                        SqlStatementResultDto(
+                            statement = statement,
+                            kind = "update_count",
+                            rowCount = stmt.updateCount,
+                            message = "Statement executed",
+                            elapsedMs = elapsed
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun renameSchema(oldName: String, newName: String) {
         val sql = "ALTER SCHEMA \"$oldName\" RENAME TO \"$newName\""
         logger.info("Executing SQL: {}", sql)
@@ -79,7 +168,12 @@ class MetadataRepository(
                 c.column_name,
                 c.data_type,
                 c.is_nullable,
-                c.column_default,
+                regexp_replace(
+                    c.column_default,
+                    '(^|[^.])(fun_auth_[a-zA-Z0-9_]*)\s*\(',
+                    E'\\1auth.\\2(',
+                    'g'
+                ) AS column_default,
                 pgd.description AS column_comment
             FROM information_schema.columns c
             LEFT JOIN pg_catalog.pg_class pc
@@ -228,7 +322,12 @@ class MetadataRepository(
                            a.attname,
                            pg_catalog.format_type(a.atttypid, a.atttypmod),
                            CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END,
-                           CASE WHEN ad.adbin IS NOT NULL THEN ' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END
+                           CASE WHEN ad.adbin IS NOT NULL THEN ' DEFAULT ' || regexp_replace(
+                               pg_get_expr(ad.adbin, ad.adrelid),
+                               '(^|[^.])(fun_auth_[a-zA-Z0-9_]*)\s*\(',
+                               E'\\1auth.\\2(',
+                               'g'
+                           ) ELSE '' END
                        ),
                        E',\n'
                        ORDER BY a.attnum
