@@ -44,6 +44,110 @@ class MetadataRepository(
             schema
         )
 
+    fun listViews(schema: String): List<String> =
+        jdbc.queryForList(
+            """
+            SELECT table_name
+            FROM information_schema.views
+            WHERE table_schema = ?
+            ORDER BY table_name
+            """.trimIndent(),
+            String::class.java,
+            schema
+        )
+
+    fun getViewDdl(schema: String, view: String): String {
+        val def = jdbc.queryForObject(
+            """
+            SELECT 'CREATE OR REPLACE VIEW "' || schemaname || '"."' || viewname || '" AS' || chr(10) || definition
+            FROM pg_views
+            WHERE schemaname = ?
+              AND viewname = ?
+            """.trimIndent(),
+            String::class.java,
+            schema,
+            view
+        )
+        return def ?: "-- Could not retrieve DDL for $schema.$view"
+    }
+
+    fun listViewGrants(schema: String, view: String): List<TableGrantDto> =
+        jdbc.query(
+            """
+            SELECT
+              grantee,
+              string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privileges
+            FROM information_schema.role_table_grants
+            WHERE table_schema = ?
+              AND table_name = ?
+            GROUP BY grantee
+            ORDER BY grantee
+            """.trimIndent(),
+            { rs, _ ->
+                TableGrantDto(
+                    grantee = rs.getString("grantee"),
+                    privileges = rs.getString("privileges") ?: ""
+                )
+            },
+            schema,
+            view
+        )
+
+    fun grantViewPrivileges(schema: String, view: String, grantee: String, privileges: List<String>) {
+        if (privileges.isEmpty()) return
+        val sql = "GRANT ${privileges.joinToString(",")} ON TABLE \"$schema\".\"$view\" TO \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun revokeAllViewPrivileges(schema: String, view: String, grantee: String) {
+        val sql = "REVOKE ALL PRIVILEGES ON TABLE \"$schema\".\"$view\" FROM \"$grantee\""
+        logger.info("Executing SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun listViewPolicies(schema: String, view: String): List<PolicyDto> =
+        jdbc.query(
+            """
+            SELECT policyname, cmd, roles, qual, with_check
+            FROM pg_policies
+            WHERE schemaname = ?
+              AND tablename = ?
+            ORDER BY policyname
+            """.trimIndent(),
+            { rs, _ ->
+                val policyName = rs.getString("policyname")
+                val cmd = rs.getString("cmd") ?: "ALL"
+                val rolesArr = (rs.getArray("roles")?.array as? Array<*>)
+                val roles = rolesArr
+                    ?.mapNotNull { it?.toString() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.joinToString(", ")
+                    ?: "public"
+                val usingExpr = rs.getString("qual")
+                val withCheckExpr = rs.getString("with_check")
+                val definitionSql = buildPolicyDefinitionSql(
+                    schema = schema,
+                    table = view,
+                    policyName = policyName,
+                    command = cmd,
+                    roles = roles,
+                    usingExpr = usingExpr,
+                    withCheckExpr = withCheckExpr
+                )
+                PolicyDto(
+                    name = policyName,
+                    command = cmd,
+                    roles = roles,
+                    usingExpr = usingExpr,
+                    withCheckExpr = withCheckExpr,
+                    definitionSql = definitionSql
+                )
+            },
+            schema,
+            view
+        )
+
     fun listRoles(): List<String> =
         jdbc.queryForList(
             """

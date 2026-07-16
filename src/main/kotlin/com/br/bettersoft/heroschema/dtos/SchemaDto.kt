@@ -11,7 +11,8 @@ data class TableDto(
 
 data class SchemaWithTablesDto(
     val name: String,
-    val tables: List<String>
+    val tables: List<String>,
+    val views: List<String> = emptyList()
 )
 
 data class ColumnDto(

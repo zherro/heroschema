@@ -67,6 +67,19 @@
                        th:classappend="${tableName == selectedTable} ? ' active'">
                     </a>
                 </div>
+
+                <div th:if="${!#lists.isEmpty(schema.views)}" class="px-2 pt-2 pb-1">
+                    <div class="text-muted small text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.05em;">Views</div>
+                </div>
+                <div class="list-group list-group-flush" th:if="${!#lists.isEmpty(schema.views)}">
+                    <a class="list-group-item list-group-item-action py-1 d-flex align-items-center gap-1"
+                       th:each="viewName : ${schema.views}"
+                       th:href="@{/schemas/view/edit(schema=${schema.name}, view=${viewName})}"
+                       th:classappend="${viewName == selectedView} ? ' active'">
+                        <span class="badge bg-info text-dark" style="font-size:0.6rem;">V</span>
+                        <span th:text="${viewName}">view_name</span>
+                    </a>
+                </div>
             </div>
         </div>
     </div>

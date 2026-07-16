@@ -39,7 +39,8 @@ class SchemaController(
         val schemaItems = schemas.map { schemaName ->
             SchemaWithTablesDto(
                 name = schemaName,
-                tables = repo.listTables(schemaName)
+                tables = repo.listTables(schemaName),
+                views = repo.listViews(schemaName)
             )
         }
         model.addAttribute("schemaItems", schemaItems)
@@ -905,6 +906,141 @@ class SchemaController(
         } catch (ex: Exception) {
             redirect.addFlashAttribute("error", "Error creating table: ${ex.message}")
             "redirect:/schemas?schema=$schema"
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // View editing — grants & policies
+    // -------------------------------------------------------------------------
+
+    @GetMapping("/view/edit")
+    fun viewEditPage(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        model: Model
+    ): String {
+        val roles = repo.listRoles()
+        val viewGrants = repo.listViewGrants(schema, view)
+        val viewDdl = repo.getViewDdl(schema, view)
+        val policies = repo.listViewPolicies(schema, view)
+        val policiesDdl = if (policies.isEmpty()) {
+            "-- No policies found for $schema.$view"
+        } else {
+            policies.joinToString("\n\n") { it.definitionSql }
+        }
+
+        model.addAttribute("page", "schemas")
+        model.addAttribute("pageTitle", "Edit view $schema.$view")
+        model.addAttribute("selectedSchema", schema)
+        model.addAttribute("selectedView", view)
+        model.addAttribute("roleOptions", roles)
+        model.addAttribute("viewGrants", viewGrants)
+        model.addAttribute("viewDdl", viewDdl)
+        model.addAttribute("policies", policies)
+        model.addAttribute("policiesDdl", policiesDdl)
+        model.addAttribute("content", "fragments/view-edit")
+        return "layout"
+    }
+
+    @PostMapping("/view/grant/apply")
+    fun applyViewGrant(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        @RequestParam grantee: String,
+        @RequestParam(defaultValue = "false") grantSelect: Boolean,
+        @RequestParam(defaultValue = "false") grantInsert: Boolean,
+        @RequestParam(defaultValue = "false") grantUpdate: Boolean,
+        @RequestParam(defaultValue = "false") grantDelete: Boolean,
+        redirect: RedirectAttributes
+    ): String {
+        val privileges = mutableListOf<String>()
+        if (grantSelect) privileges.add("SELECT")
+        if (grantInsert) privileges.add("INSERT")
+        if (grantUpdate) privileges.add("UPDATE")
+        if (grantDelete) privileges.add("DELETE")
+
+        if (grantee.isBlank() || privileges.isEmpty()) {
+            redirect.addFlashAttribute("error", "Select role and at least one privilege")
+            return "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        }
+
+        return try {
+            repo.grantViewPrivileges(schema, view, grantee, privileges)
+            redirect.addFlashAttribute("message", "Granted ${privileges.joinToString(",")} on $schema.$view to $grantee")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error applying grant: ${ex.message}")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        }
+    }
+
+    @PostMapping("/view/grant/revoke")
+    fun revokeViewGrant(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        @RequestParam grantee: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.revokeAllViewPrivileges(schema, view, grantee)
+            redirect.addFlashAttribute("message", "Revoked view privileges from $grantee")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error revoking grant: ${ex.message}")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        }
+    }
+
+    @PostMapping("/view/policy/sql/apply")
+    fun applyViewPolicySql(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        @RequestParam policySql: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            val normalizedSql = policySql.trim()
+            if (normalizedSql.isBlank()) throw IllegalArgumentException("SQL cannot be empty")
+            repo.executeTableSql(normalizedSql)
+            redirect.addFlashAttribute("policySqlPreview", normalizedSql)
+            redirect.addFlashAttribute("message", "SQL applied successfully")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error applying SQL: ${ex.message}")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        }
+    }
+
+    @PostMapping("/view/policy/delete")
+    fun deleteViewPolicy(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        @RequestParam policyName: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.dropPolicy(schema, view, policyName)
+            redirect.addFlashAttribute("message", "Policy $policyName removed")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error removing policy: ${ex.message}")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
+        }
+    }
+
+    @PostMapping("/view/drop")
+    fun dropView(
+        @RequestParam schema: String,
+        @RequestParam view: String,
+        redirect: RedirectAttributes
+    ): String {
+        return try {
+            repo.executeTableSql("DROP VIEW IF EXISTS \"$schema\".\"$view\"")
+            redirect.addFlashAttribute("message", "View $schema.$view dropped")
+            "redirect:/schemas?schema=$schema"
+        } catch (ex: Exception) {
+            redirect.addFlashAttribute("error", "Error dropping view: ${ex.message}")
+            "redirect:/schemas/view/edit?schema=$schema&view=$view"
         }
     }
 }
