@@ -274,31 +274,67 @@
             refreshFkVisibility(jQuery(this).closest('tr'));
         });
 
-        // New column button: clone template row and append to table body
+        // New column row helper: clone the row template, append it, optionally prefill values
         var addBtn = document.getElementById('add-column-btn');
+        var presetColumnsBtn = document.getElementById('add-preset-columns-btn');
         var tbody = document.getElementById('columns-body');
         var tpl = document.getElementById('column-row-template');
-        if (addBtn && tbody && tpl) {
+
+        function addColumnRow(preset) {
+            if (!tbody || !tpl) return null;
+            var html = tpl.textContent;
+            if (!html) return null;
+
             var nextIndex = parseInt(tbody.getAttribute('data-next-index') || '0', 10);
+            html = html.replace(/__INDEX__/g, String(nextIndex));
+            tbody.setAttribute('data-next-index', String(nextIndex + 1));
+
+            var temp = document.createElement('tbody');
+            temp.innerHTML = html.trim();
+            var newRow = temp.firstElementChild;
+            if (!newRow) return null;
+            tbody.appendChild(newRow);
+
+            if (preset) {
+                var nameInput = newRow.querySelector('input[name$=".name"]');
+                var typeSelect = newRow.querySelector('select[name$=".type"]');
+                var nullableInput = newRow.querySelector('input[name$=".nullable"]');
+                var defaultInput = newRow.querySelector('input[name$=".defaultValue"]');
+                if (nameInput) nameInput.value = preset.name || '';
+                if (typeSelect) typeSelect.value = preset.type || '';
+                if (nullableInput) nullableInput.checked = !!preset.nullable;
+                if (defaultInput) defaultInput.value = preset.defaultValue || '';
+            }
+
+            // Re-init FK selects (Select2) and keep everything consistent
+            if (typeof jQuery !== 'undefined') {
+                initFkSelects();
+                refreshFkVisibility(newRow);
+            }
+
+            return newRow;
+        }
+
+        if (addBtn) {
             addBtn.addEventListener('click', function () {
-                var html = tpl.textContent;
-                if (!html) return;
-                html = html.replace(/__INDEX__/g, String(nextIndex));
-                nextIndex++;
-                tbody.setAttribute('data-next-index', String(nextIndex));
+                addColumnRow();
+            });
+        }
 
-                var temp = document.createElement('tbody');
-                temp.innerHTML = html.trim();
-                var newRow = temp.firstElementChild;
-                if (newRow) {
-                    tbody.appendChild(newRow);
-                }
+        // Preset: common tenant/audit columns, added with a single click
+        var TENANT_AUDIT_COLUMN_PRESETS = [
+            { name: 'tenant_id', type: 'uuid', nullable: false, defaultValue: 'auth.fun_auth_current_tenant_id()' },
+            { name: 'created_by', type: 'uuid', nullable: false, defaultValue: 'auth.fun_auth_user_id()' },
+            { name: 'created_at', type: 'timestamp with time zone', nullable: true, defaultValue: 'CURRENT_TIMESTAMP' },
+            { name: 'updated_at', type: 'timestamp with time zone', nullable: true, defaultValue: 'CURRENT_TIMESTAMP' },
+            { name: 'active', type: 'boolean', nullable: false, defaultValue: 'true' }
+        ];
 
-                // Re-init FK selects (Select2) and keep everything consistent
-                if (typeof jQuery !== 'undefined') {
-                    initFkSelects();
-                    refreshFkVisibility(newRow);
-                }
+        if (presetColumnsBtn) {
+            presetColumnsBtn.addEventListener('click', function () {
+                TENANT_AUDIT_COLUMN_PRESETS.forEach(function (preset) {
+                    addColumnRow(preset);
+                });
             });
         }
 

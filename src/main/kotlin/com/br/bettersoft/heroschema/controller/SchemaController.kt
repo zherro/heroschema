@@ -267,6 +267,7 @@ class SchemaController(
 
         val existingColumns = repo.listColumns(schema, table)
         val constraints = repo.getTableConstraints(schema, table)
+        val existingIndexes = repo.listIndexes(schema, table)
 
         val existingByName = existingColumns.associateBy { it.name }
 
@@ -407,16 +408,22 @@ class SchemaController(
             }
         }
 
-        if (statements.isEmpty()) {
-            redirect.addFlashAttribute("message", "No changes to apply")
-            return "redirect:/schemas?schema=$schema&table=$table"
-        }
-
-        // Handle new index creation (composite, unique, partial)
+        // Index create/edit (composite, unique, partial). Building this before the
+        // "no changes" bail-out below is what lets an index-only submission (no column
+        // edits) actually create something instead of short-circuiting.
+        val editIndexOriginalName = form.editIndexOriginalName?.trim().orEmpty()
         val newIndexName = form.newIndexName?.trim().orEmpty()
         val newIndexColumns = form.newIndexColumns?.trim().orEmpty()
         val newIndexWhere = form.newIndexWhere?.trim().orEmpty()
         val newIndexUnique = form.newIndexUnique
+
+        // If we are editing an existing index, drop the old one first (when not constraint-backed)
+        if (editIndexOriginalName.isNotEmpty()) {
+            val existingIndex = existingIndexes.firstOrNull { it.name == editIndexOriginalName }
+            if (existingIndex != null && !existingIndex.constraintBacked) {
+                statements.add("DROP INDEX IF EXISTS \"$schema\".\"$editIndexOriginalName\"")
+            }
+        }
 
         if (newIndexName.isNotEmpty() && newIndexColumns.isNotEmpty()) {
             val colsSql = newIndexColumns.split(',')
@@ -431,6 +438,11 @@ class SchemaController(
                     "CREATE ${uniqueSql}INDEX \"$newIndexName\" ON $fullTable ($colsSql)$whereSql"
                 statements.add(idxSql)
             }
+        }
+
+        if (statements.isEmpty()) {
+            redirect.addFlashAttribute("message", "No changes to apply")
+            return "redirect:/schemas?schema=$schema&table=$table"
         }
 
         val sql = statements.joinToString(";\n") + ";"

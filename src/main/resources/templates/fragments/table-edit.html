@@ -142,7 +142,13 @@
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <button type="button" id="add-column-btn" class="btn btn-outline-primary btn-sm">+ New column</button>
+            <div class="d-flex gap-2">
+                <button type="button" id="add-column-btn" class="btn btn-outline-primary btn-sm">+ New column</button>
+                <button type="button" id="add-preset-columns-btn" class="btn btn-outline-secondary btn-sm"
+                        title="tenant_id, created_by, created_at, updated_at, active">
+                    + Colunas tenant/auditoria
+                </button>
+            </div>
         </div>
 
         <!-- Index maintenance (create composite/partial/unique index) -->
