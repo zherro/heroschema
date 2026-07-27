@@ -1,0 +1,240 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">New domain type</h3>
+        <a class="btn btn-sm btn-outline-secondary" th:href="@{/types}">Back</a>
+    </div>
+    <p class="text-muted small">
+        Um domain é um tipo baseado em outro tipo (ex: <code>text</code>, <code>integer</code>) com uma regra
+        de validação embutida. É útil para "travar" um conjunto de valores permitidos (como um enum) ou um
+        formato (ex: e-mail), sem precisar repetir a mesma restrição em toda tabela que usar a coluna.
+    </p>
+
+    <form method="post" th:action="@{/types/domain/new}" th:object="${form}" id="domain-create-form">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Basic info</div>
+            <div class="card-body row g-2">
+                <div class="col-auto">
+                    <label class="form-label small mb-1">Schema</label>
+                    <select class="form-select form-select-sm" th:field="*{schema}">
+                        <option value="">-- schema --</option>
+                        <option th:each="s : ${schemas}" th:value="${s}" th:text="${s}"></option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-1">Name</label>
+                    <input class="form-control form-control-sm" placeholder="email" th:field="*{name}">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-1">Base type</label>
+                    <div class="input-group input-group-sm">
+                        <input class="form-control" id="domain-base-type-input" th:field="*{baseType}">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">...</button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li class="dropdown-header small text-muted">Tipos comuns</li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="text">text</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="varchar(255)">varchar(255)</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="integer">integer</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="bigint">bigint</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="numeric(12,2)">numeric(12,2)</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="boolean">boolean</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="uuid">uuid</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="date">date</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="timestamp with time zone">timestamp with time zone</button></li>
+                            <li><button class="dropdown-item base-type-suggestion" type="button" data-value="jsonb">jsonb</button></li>
+                        </ul>
+                    </div>
+                    <div class="form-text">
+                        Qualquer tipo válido do Postgres, incluindo tamanho/precisão (ex: <code>varchar(100)</code>,
+                        <code>numeric(10,2)</code>). Não pode ser alterado depois de criado.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Constraints</div>
+            <div class="card-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-auto">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" th:field="*{notNull}">
+                            <label class="form-check-label">Not null</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">Default</label>
+                        <input class="form-control form-control-sm" placeholder="'x', 0, now()" th:field="*{defaultValue}">
+                    </div>
+                </div>
+
+                <label class="form-label small mb-1">Restrição (CHECK)</label>
+                <select class="form-select form-select-sm mb-2" id="check-kind" style="max-width: 360px;">
+                    <option value="">Nenhuma restrição</option>
+                    <option value="list">Uma lista de valores permitidos (como um enum)</option>
+                    <option value="regex">Padrão de texto (regex)</option>
+                    <option value="range">Intervalo (mínimo / máximo)</option>
+                    <option value="custom">Expressão customizada</option>
+                </select>
+
+                <!-- LIST mode: dynamic value rows, generates VALUE IN ('a','b',...) -->
+                <div id="check-section-list" class="d-none">
+                    <div id="check-list-values">
+                        <div class="input-group input-group-sm mb-2">
+                            <input class="form-control check-list-value" placeholder="valor">
+                            <button type="button" class="btn btn-outline-danger remove-check-value-btn">&times;</button>
+                        </div>
+                    </div>
+                    <button type="button" id="add-check-value-btn" class="btn btn-outline-primary btn-sm mb-2">+ Value</button>
+                </div>
+
+                <!-- REGEX mode: generates VALUE ~ 'pattern' -->
+                <div id="check-section-regex" class="d-none mb-2">
+                    <input class="form-control form-control-sm" id="check-regex-pattern"
+                           placeholder="^[^@]+@[^@]+\.[^@]+$">
+                    <div class="form-text">
+                        Expressão regular que o valor precisa satisfazer, ex: <code>^[^@]+@[^@]+\.[^@]+$</code> para e-mail.
+                    </div>
+                </div>
+
+                <!-- RANGE mode: generates VALUE >= min AND VALUE <= max -->
+                <div id="check-section-range" class="d-none row g-2 mb-2">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">Mínimo</label>
+                        <input class="form-control form-control-sm" id="check-range-min" placeholder="0">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">Máximo</label>
+                        <input class="form-control form-control-sm" id="check-range-max" placeholder="100">
+                    </div>
+                    <div class="form-text w-100">
+                        Para texto/data use aspas simples, ex: <code>'2024-01-01'</code>.
+                    </div>
+                </div>
+
+                <!-- CUSTOM mode: raw expression, same as before -->
+                <div id="check-section-custom" class="d-none mb-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">CHECK (</span>
+                        <input class="form-control" id="check-custom-expr" placeholder="VALUE ~ '^[^@]+@[^@]+$'">
+                        <span class="input-group-text">)</span>
+                    </div>
+                    <div class="form-text">
+                        Use <code>VALUE</code> para se referir ao valor sendo validado.
+                    </div>
+                </div>
+
+                <div class="form-text" th:if="true">
+                    Prévia: <code id="check-preview">(nenhuma)</code>
+                </div>
+                <input type="hidden" th:field="*{checkExpr}" id="check-expr-hidden">
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Metadata</div>
+            <div class="card-body">
+                <label class="form-label small mb-1">Comment</label>
+                <input class="form-control form-control-sm" th:field="*{comment}">
+            </div>
+        </div>
+
+        <button class="btn btn-primary btn-sm" type="submit">Create</button>
+    </form>
+
+    <script th:inline="javascript">
+        (function () {
+            function esc(s) { return String(s == null ? '' : s).replace(/'/g, "''"); }
+
+            var kindSelect = document.getElementById('check-kind');
+            var sections = {
+                list: document.getElementById('check-section-list'),
+                regex: document.getElementById('check-section-regex'),
+                range: document.getElementById('check-section-range'),
+                custom: document.getElementById('check-section-custom')
+            };
+            var preview = document.getElementById('check-preview');
+            var hiddenInput = document.getElementById('check-expr-hidden');
+
+            var listValuesBody = document.getElementById('check-list-values');
+            var addValueBtn = document.getElementById('add-check-value-btn');
+
+            function currentListValues() {
+                return Array.prototype.slice.call(listValuesBody.querySelectorAll('.check-list-value'))
+                    .map(function (input) { return input.value.trim(); })
+                    .filter(function (v) { return v.length > 0; });
+            }
+
+            function buildExpr() {
+                var kind = kindSelect.value;
+                if (kind === 'list') {
+                    var values = currentListValues();
+                    if (values.length === 0) return '';
+                    return 'VALUE IN (' + values.map(function (v) { return "'" + esc(v) + "'"; }).join(', ') + ')';
+                }
+                if (kind === 'regex') {
+                    var pattern = document.getElementById('check-regex-pattern').value.trim();
+                    return pattern ? "VALUE ~ '" + esc(pattern) + "'" : '';
+                }
+                if (kind === 'range') {
+                    var min = document.getElementById('check-range-min').value.trim();
+                    var max = document.getElementById('check-range-max').value.trim();
+                    if (!min && !max) return '';
+                    var parts = [];
+                    if (min) parts.push('VALUE >= ' + min);
+                    if (max) parts.push('VALUE <= ' + max);
+                    return parts.join(' AND ');
+                }
+                if (kind === 'custom') {
+                    return document.getElementById('check-custom-expr').value.trim();
+                }
+                return '';
+            }
+
+            function refresh() {
+                var kind = kindSelect.value;
+                Object.keys(sections).forEach(function (key) {
+                    sections[key].classList.toggle('d-none', key !== kind);
+                });
+                var expr = buildExpr();
+                hiddenInput.value = expr;
+                preview.textContent = expr ? ('CHECK (' + expr + ')') : '(nenhuma)';
+            }
+
+            function addValueRow() {
+                var row = document.createElement('div');
+                row.className = 'input-group input-group-sm mb-2';
+                row.innerHTML = '<input class="form-control check-list-value" placeholder="valor">' +
+                    '<button type="button" class="btn btn-outline-danger remove-check-value-btn">&times;</button>';
+                listValuesBody.appendChild(row);
+            }
+
+            if (addValueBtn) addValueBtn.addEventListener('click', addValueRow);
+
+            document.querySelectorAll('.base-type-suggestion').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    document.getElementById('domain-base-type-input').value = btn.getAttribute('data-value') || '';
+                });
+            });
+
+            listValuesBody.addEventListener('click', function (e) {
+                var btn = e.target.closest && e.target.closest('.remove-check-value-btn');
+                if (!btn) return;
+                var row = btn.closest('.input-group');
+                if (row) row.remove();
+                refresh();
+            });
+
+            document.addEventListener('input', function (e) {
+                if (e.target.closest('#check-section-list, #check-section-regex, #check-section-range, #check-section-custom')) {
+                    refresh();
+                }
+            });
+            kindSelect.addEventListener('change', refresh);
+
+            document.getElementById('domain-create-form').addEventListener('submit', refresh);
+
+            refresh();
+        })();
+    </script>
+</div>

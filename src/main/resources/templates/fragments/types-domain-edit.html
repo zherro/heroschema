@@ -1,0 +1,310 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">
+            Edit domain
+            <span class="badge bg-secondary ms-2" th:text="${form.schema}">public</span>
+            <span class="ms-1" th:text="${form.name}">my_domain</span>
+        </h3>
+        <a class="btn btn-sm btn-outline-secondary" th:href="@{/types}">Back</a>
+    </div>
+
+    <div th:if="${domainType == null}" class="alert alert-warning">Tipo não encontrado.</div>
+
+    <div th:if="${domainType != null}">
+        <p class="text-muted small">
+            Base type: <code th:text="${domainType.baseType}"></code>
+            &mdash; o tipo base de um domain não pode ser alterado depois de criado
+            (para mudar o tipo base é preciso excluir e recriar o domain).
+        </p>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Not null</div>
+            <div class="card-body">
+                <form class="d-flex align-items-center gap-2" method="post" th:action="@{/types/domain/notnull}">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="notNull" value="true"
+                               id="domain-notnull" th:checked="${domainType.notNull}">
+                        <label class="form-check-label" for="domain-notnull">Not null</label>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit">Save</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Default</div>
+            <div class="card-body">
+                <form class="row g-2" method="post" th:action="@{/types/domain/default}">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <div class="col-8">
+                        <input class="form-control form-control-sm" name="defaultValue"
+                               placeholder="'x', 0, now() (deixe em branco para remover)"
+                               th:value="${domainType.defaultValue}">
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Check constraint</div>
+            <div class="card-body">
+                <form method="post" th:action="@{/types/domain/check}" id="domain-check-form">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <input type="hidden" name="oldCheckName" th:value="${domainType.checkName}">
+
+                    <select class="form-select form-select-sm mb-2" id="check-kind" style="max-width: 360px;">
+                        <option value="">Nenhuma restrição</option>
+                        <option value="list">Uma lista de valores permitidos (como um enum)</option>
+                        <option value="regex">Padrão de texto (regex)</option>
+                        <option value="range">Intervalo (mínimo / máximo)</option>
+                        <option value="custom">Expressão customizada</option>
+                    </select>
+
+                    <div id="check-section-list" class="d-none">
+                        <div id="check-list-values"></div>
+                        <button type="button" id="add-check-value-btn" class="btn btn-outline-primary btn-sm mb-2">+ Value</button>
+                    </div>
+
+                    <div id="check-section-regex" class="d-none mb-2">
+                        <input class="form-control form-control-sm" id="check-regex-pattern"
+                               placeholder="^[^@]+@[^@]+\.[^@]+$">
+                        <div class="form-text">
+                            Expressão regular que o valor precisa satisfazer, ex: <code>^[^@]+@[^@]+\.[^@]+$</code> para e-mail.
+                        </div>
+                    </div>
+
+                    <div id="check-section-range" class="d-none row g-2 mb-2">
+                        <div class="col-auto">
+                            <label class="form-label small mb-1">Mínimo</label>
+                            <input class="form-control form-control-sm" id="check-range-min" placeholder="0">
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small mb-1">Máximo</label>
+                            <input class="form-control form-control-sm" id="check-range-max" placeholder="100">
+                        </div>
+                        <div class="form-text w-100">
+                            Para texto/data use aspas simples, ex: <code>'2024-01-01'</code>.
+                        </div>
+                    </div>
+
+                    <div id="check-section-custom" class="d-none mb-2">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">CHECK (</span>
+                            <input class="form-control" id="check-custom-expr" placeholder="VALUE ~ '^[^@]+@[^@]+$'">
+                            <span class="input-group-text">)</span>
+                        </div>
+                        <div class="form-text">
+                            Use <code>VALUE</code> para se referir ao valor sendo validado.
+                        </div>
+                    </div>
+
+                    <div class="form-text mb-2">
+                        Prévia: <code id="check-preview">(nenhuma)</code>
+                    </div>
+
+                    <input type="hidden" name="newCheckExpr" id="check-expr-hidden">
+                    <button class="btn btn-sm btn-outline-secondary" type="submit">Save</button>
+                    <div class="form-text mt-1" th:if="${domainType.checkExpr} != null">
+                        Restrição atual (bruta): <code th:text="${domainType.checkExpr}"></code>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">Type settings</div>
+            <div class="card-body">
+                <form class="row g-2 mb-3" method="post" th:action="@{/types/domain/rename}">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">Rename type to</label>
+                        <input class="form-control form-control-sm" name="newTypeName" th:placeholder="${form.name}">
+                    </div>
+                    <div class="col-auto align-self-end">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">Rename type</button>
+                    </div>
+                </form>
+
+                <form class="row g-2" method="post" th:action="@{/types/domain/comment}">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <div class="col-8">
+                        <label class="form-label small mb-1">Comment</label>
+                        <input class="form-control form-control-sm" name="comment" th:value="${domainType.comment}">
+                    </div>
+                    <div class="col-auto align-self-end">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">Save comment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-danger mb-3">
+            <div class="card-header text-danger">Danger zone</div>
+            <div class="card-body">
+                <form method="post" th:action="@{/types/domain/delete}"
+                      onsubmit="return confirm('Excluir o domain ' + this.schema.value + '.' + this.name.value + '? Isso falhará se ainda houver colunas usando este tipo, a menos que Cascade esteja marcado.');">
+                    <input type="hidden" name="schema" th:value="${form.schema}">
+                    <input type="hidden" name="name" th:value="${form.name}">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="cascade" value="true" id="domain-cascade">
+                        <label class="form-check-label small" for="domain-cascade">
+                            Cascade (remove também colunas/objetos dependentes)
+                        </label>
+                    </div>
+                    <button class="btn btn-sm btn-danger" type="submit">Delete domain</button>
+                </form>
+            </div>
+        </div>
+
+        <script th:inline="javascript">
+            (function () {
+                var existingCheckExpr = /*[[${domainType != null ? domainType.checkExpr : null}]]*/ null;
+
+                function esc(s) { return String(s == null ? '' : s).replace(/'/g, "''"); }
+                function unesc(s) { return String(s == null ? '' : s).replace(/''/g, "'"); }
+
+                // Best-effort parse of an existing CHECK expression so the builder can preselect
+                // the right mode. Postgres often rewrites "VALUE IN (...)" into
+                // "VALUE = ANY (ARRAY[...])" once stored, so both forms are recognized.
+                // Anything that doesn't match a known shape falls back to "custom" (still correct,
+                // just shown as raw text instead of a friendly builder).
+                function parseQuotedList(inner) {
+                    var values = [];
+                    var re = /'((?:[^']|'')*)'(?:::[a-zA-Z_ ]+)?/g;
+                    var m;
+                    while ((m = re.exec(inner)) !== null) {
+                        values.push(unesc(m[1]));
+                    }
+                    return values;
+                }
+
+                function parseExisting(expr) {
+                    if (!expr) return { kind: '' };
+                    var trimmed = expr.trim().replace(/^\(+/, '').replace(/\)+$/, '');
+
+                    var m = trimmed.match(/^VALUE\s+IN\s*\((.*)\)$/i);
+                    if (m) return { kind: 'list', values: parseQuotedList(m[1]) };
+
+                    m = trimmed.match(/^VALUE\s*=\s*ANY\s*\(\s*ARRAY\[(.*)\]\s*\)$/i);
+                    if (m) return { kind: 'list', values: parseQuotedList(m[1]) };
+
+                    m = trimmed.match(/^VALUE\s*~\s*'((?:[^']|'')*)'$/i);
+                    if (m) return { kind: 'regex', pattern: unesc(m[1]) };
+
+                    m = trimmed.match(/^VALUE\s*>=\s*(.+?)\s+AND\s+VALUE\s*<=\s*(.+)$/i);
+                    if (m) return { kind: 'range', min: m[1].trim(), max: m[2].trim() };
+
+                    return { kind: 'custom', raw: expr.trim() };
+                }
+
+                var kindSelect = document.getElementById('check-kind');
+                var sections = {
+                    list: document.getElementById('check-section-list'),
+                    regex: document.getElementById('check-section-regex'),
+                    range: document.getElementById('check-section-range'),
+                    custom: document.getElementById('check-section-custom')
+                };
+                var preview = document.getElementById('check-preview');
+                var hiddenInput = document.getElementById('check-expr-hidden');
+                var listValuesBody = document.getElementById('check-list-values');
+                var addValueBtn = document.getElementById('add-check-value-btn');
+
+                function addValueRow(value) {
+                    var row = document.createElement('div');
+                    row.className = 'input-group input-group-sm mb-2';
+                    row.innerHTML = '<input class="form-control check-list-value" placeholder="valor">' +
+                        '<button type="button" class="btn btn-outline-danger remove-check-value-btn">&times;</button>';
+                    row.querySelector('.check-list-value').value = value || '';
+                    listValuesBody.appendChild(row);
+                }
+
+                function currentListValues() {
+                    return Array.prototype.slice.call(listValuesBody.querySelectorAll('.check-list-value'))
+                        .map(function (input) { return input.value.trim(); })
+                        .filter(function (v) { return v.length > 0; });
+                }
+
+                function buildExpr() {
+                    var kind = kindSelect.value;
+                    if (kind === 'list') {
+                        var values = currentListValues();
+                        if (values.length === 0) return '';
+                        return 'VALUE IN (' + values.map(function (v) { return "'" + esc(v) + "'"; }).join(', ') + ')';
+                    }
+                    if (kind === 'regex') {
+                        var pattern = document.getElementById('check-regex-pattern').value.trim();
+                        return pattern ? "VALUE ~ '" + esc(pattern) + "'" : '';
+                    }
+                    if (kind === 'range') {
+                        var min = document.getElementById('check-range-min').value.trim();
+                        var max = document.getElementById('check-range-max').value.trim();
+                        if (!min && !max) return '';
+                        var parts = [];
+                        if (min) parts.push('VALUE >= ' + min);
+                        if (max) parts.push('VALUE <= ' + max);
+                        return parts.join(' AND ');
+                    }
+                    if (kind === 'custom') {
+                        return document.getElementById('check-custom-expr').value.trim();
+                    }
+                    return '';
+                }
+
+                function refresh() {
+                    var kind = kindSelect.value;
+                    Object.keys(sections).forEach(function (key) {
+                        sections[key].classList.toggle('d-none', key !== kind);
+                    });
+                    var expr = buildExpr();
+                    hiddenInput.value = expr;
+                    preview.textContent = expr ? ('CHECK (' + expr + ')') : '(nenhuma)';
+                }
+
+                if (addValueBtn) addValueBtn.addEventListener('click', function () { addValueRow(''); });
+
+                listValuesBody.addEventListener('click', function (e) {
+                    var btn = e.target.closest && e.target.closest('.remove-check-value-btn');
+                    if (!btn) return;
+                    var row = btn.closest('.input-group');
+                    if (row) row.remove();
+                    refresh();
+                });
+
+                document.addEventListener('input', function (e) {
+                    if (e.target.closest('#check-section-list, #check-section-regex, #check-section-range, #check-section-custom')) {
+                        refresh();
+                    }
+                });
+                kindSelect.addEventListener('change', refresh);
+                document.getElementById('domain-check-form').addEventListener('submit', refresh);
+
+                // Initialize from the existing constraint, if any.
+                var parsed = parseExisting(existingCheckExpr);
+                kindSelect.value = parsed.kind || '';
+                if (parsed.kind === 'list') {
+                    (parsed.values || []).forEach(function (v) { addValueRow(v); });
+                    if ((parsed.values || []).length === 0) addValueRow('');
+                } else {
+                    addValueRow('');
+                }
+                if (parsed.kind === 'regex') document.getElementById('check-regex-pattern').value = parsed.pattern || '';
+                if (parsed.kind === 'range') {
+                    document.getElementById('check-range-min').value = parsed.min || '';
+                    document.getElementById('check-range-max').value = parsed.max || '';
+                }
+                if (parsed.kind === 'custom') document.getElementById('check-custom-expr').value = parsed.raw || '';
+
+                refresh();
+            })();
+        </script>
+    </div>
+</div>

@@ -1,6 +1,8 @@
 package com.br.bettersoft.heroschema.repository
 
 import com.br.bettersoft.heroschema.dtos.ColumnDto
+import com.br.bettersoft.heroschema.dtos.DomainTypeDto
+import com.br.bettersoft.heroschema.dtos.EnumTypeDto
 import com.br.bettersoft.heroschema.dtos.FunctionDto
 import com.br.bettersoft.heroschema.dtos.ForeignKeyInfoDto
 import com.br.bettersoft.heroschema.dtos.TableConstraintsDto
@@ -271,6 +273,8 @@ class MetadataRepository(
             SELECT
                 c.column_name,
                 c.data_type,
+                c.udt_schema,
+                c.udt_name,
                 c.is_nullable,
                 regexp_replace(
                     c.column_default,
@@ -296,9 +300,20 @@ class MetadataRepository(
             ORDER BY c.ordinal_position
             """.trimIndent(),
             { rs, _ ->
+                val dataType = rs.getString("data_type")
+                val udtSchema = rs.getString("udt_schema")
+                val udtName = rs.getString("udt_name")
+                // information_schema reports enum/domain/composite columns as 'USER-DEFINED';
+                // resolve the real (schema-qualified when foreign) type name from udt_schema/udt_name instead.
+                val resolvedType = if (dataType == "USER-DEFINED") {
+                    if (udtSchema == schema) udtName else "$udtSchema.$udtName"
+                } else {
+                    dataType
+                }
+
                 ColumnDto(
                     name = rs.getString("column_name"),
-                    type = rs.getString("data_type"),
+                    type = resolvedType,
                     nullable = rs.getString("is_nullable") == "YES",
                     defaultValue = rs.getString("column_default"),
                     comment = rs.getString("column_comment")
@@ -833,4 +848,210 @@ class MetadataRepository(
             schema,
             table
         )
+
+    // --- Custom types: ENUM ---
+
+    fun listEnumTypes(schema: String? = null): List<EnumTypeDto> {
+        // Postgres can't infer the parameter type for a bare "? IS NULL" check, so build the
+        // schema filter conditionally instead of always binding two parameters.
+        val schemaFilter = if (schema != null) "AND n.nspname = ?" else ""
+        val rows = jdbc.query(
+            """
+            SELECT
+              n.nspname AS schema_name,
+              t.typname AS type_name,
+              e.enumlabel AS value,
+              d.description AS comment
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_enum e ON e.enumtypid = t.oid
+            LEFT JOIN pg_description d ON d.objoid = t.oid AND d.objsubid = 0
+            WHERE t.typtype = 'e'
+              $schemaFilter
+            ORDER BY n.nspname, t.typname, e.enumsortorder
+            """.trimIndent(),
+            { rs, _ ->
+                Triple(
+                    rs.getString("schema_name") to rs.getString("type_name"),
+                    rs.getString("value"),
+                    rs.getString("comment")
+                )
+            },
+            *listOfNotNull(schema).toTypedArray()
+        )
+
+        return rows.groupBy { it.first }
+            .map { (schemaAndName, group) ->
+                EnumTypeDto(
+                    schema = schemaAndName.first,
+                    name = schemaAndName.second,
+                    values = group.map { it.second },
+                    comment = group.first().third
+                )
+            }
+            .sortedWith(compareBy({ it.schema }, { it.name }))
+    }
+
+    fun createEnumType(schema: String, name: String, values: List<String>, comment: String?) {
+        val valuesSql = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
+        val sql = "CREATE TYPE \"$schema\".\"$name\" AS ENUM ($valuesSql)"
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+        if (!comment.isNullOrBlank()) {
+            setTypeComment(schema, name, comment)
+        }
+    }
+
+    fun addEnumValue(schema: String, name: String, value: String, insertPosition: String, relativeToValue: String?) {
+        val escapedValue = value.replace("'", "''")
+        val position = when {
+            insertPosition == "before" && !relativeToValue.isNullOrBlank() ->
+                "BEFORE '${relativeToValue.replace("'", "''")}'"
+            insertPosition == "after" && !relativeToValue.isNullOrBlank() ->
+                "AFTER '${relativeToValue.replace("'", "''")}'"
+            else -> ""
+        }
+        val sql = "ALTER TYPE \"$schema\".\"$name\" ADD VALUE IF NOT EXISTS '$escapedValue' $position".trim()
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun renameEnumValue(schema: String, name: String, from: String, to: String) {
+        val sql = "ALTER TYPE \"$schema\".\"$name\" RENAME VALUE '${from.replace("'", "''")}' TO '${to.replace("'", "''")}'"
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun renameEnumType(schema: String, name: String, newName: String) {
+        val sql = "ALTER TYPE \"$schema\".\"$name\" RENAME TO \"$newName\""
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun setTypeComment(schema: String, name: String, comment: String) {
+        val sql = "COMMENT ON TYPE \"$schema\".\"$name\" IS '${comment.replace("'", "''")}'"
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun dropEnumType(schema: String, name: String, cascade: Boolean) {
+        val sql = "DROP TYPE IF EXISTS \"$schema\".\"$name\"" + if (cascade) " CASCADE" else ""
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    // --- Custom types: DOMAIN ---
+
+    fun listDomainTypes(schema: String? = null): List<DomainTypeDto> {
+        // Same "? IS NULL" parameter-type-inference issue as listEnumTypes: build the filter
+        // conditionally instead.
+        val schemaFilter = if (schema != null) "AND n.nspname = ?" else ""
+        return jdbc.query(
+            """
+            SELECT DISTINCT ON (n.nspname, t.typname)
+              n.nspname AS schema_name,
+              t.typname AS type_name,
+              format_type(t.typbasetype, t.typtypmod) AS base_type,
+              t.typnotnull AS not_null,
+              t.typdefault AS default_value,
+              con.conname AS check_name,
+              pg_get_constraintdef(con.oid) AS check_def,
+              d.description AS comment
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            LEFT JOIN pg_constraint con ON con.contypid = t.oid
+            LEFT JOIN pg_description d ON d.objoid = t.oid AND d.objsubid = 0
+            WHERE t.typtype = 'd'
+              $schemaFilter
+            ORDER BY n.nspname, t.typname, con.oid
+            """.trimIndent(),
+            { rs, _ ->
+                val checkDef = rs.getString("check_def")
+                val checkExpr = checkDef
+                    ?.removePrefix("CHECK (")
+                    ?.removeSuffix(")")
+
+                DomainTypeDto(
+                    schema = rs.getString("schema_name"),
+                    name = rs.getString("type_name"),
+                    baseType = rs.getString("base_type"),
+                    notNull = rs.getBoolean("not_null"),
+                    defaultValue = rs.getString("default_value"),
+                    checkName = rs.getString("check_name"),
+                    checkExpr = checkExpr,
+                    comment = rs.getString("comment")
+                )
+            },
+            *listOfNotNull(schema).toTypedArray()
+        )
+    }
+
+    fun createDomainType(
+        schema: String,
+        name: String,
+        baseType: String,
+        notNull: Boolean,
+        defaultValue: String?,
+        checkExpr: String?,
+        comment: String?
+    ) {
+        val sql = buildString {
+            append("CREATE DOMAIN \"$schema\".\"$name\" AS $baseType")
+            if (!defaultValue.isNullOrBlank()) append(" DEFAULT $defaultValue")
+            if (notNull) append(" NOT NULL")
+            if (!checkExpr.isNullOrBlank()) append(" CHECK ($checkExpr)")
+        }
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+        if (!comment.isNullOrBlank()) {
+            setDomainComment(schema, name, comment)
+        }
+    }
+
+    fun alterDomainDefault(schema: String, name: String, defaultValue: String?) {
+        val sql = if (defaultValue.isNullOrBlank()) {
+            "ALTER DOMAIN \"$schema\".\"$name\" DROP DEFAULT"
+        } else {
+            "ALTER DOMAIN \"$schema\".\"$name\" SET DEFAULT $defaultValue"
+        }
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun alterDomainNotNull(schema: String, name: String, notNull: Boolean) {
+        val sql = "ALTER DOMAIN \"$schema\".\"$name\" ${if (notNull) "SET" else "DROP"} NOT NULL"
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun alterDomainCheck(schema: String, name: String, oldCheckName: String?, newCheckExpr: String?) {
+        if (!oldCheckName.isNullOrBlank()) {
+            val dropSql = "ALTER DOMAIN \"$schema\".\"$name\" DROP CONSTRAINT \"$oldCheckName\""
+            logger.info("Executing type SQL: {}", dropSql)
+            jdbc.execute(dropSql)
+        }
+        if (!newCheckExpr.isNullOrBlank()) {
+            val addSql = "ALTER DOMAIN \"$schema\".\"$name\" ADD CONSTRAINT \"${name}_check\" CHECK ($newCheckExpr)"
+            logger.info("Executing type SQL: {}", addSql)
+            jdbc.execute(addSql)
+        }
+    }
+
+    fun renameDomain(schema: String, name: String, newName: String) {
+        val sql = "ALTER DOMAIN \"$schema\".\"$name\" RENAME TO \"$newName\""
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun setDomainComment(schema: String, name: String, comment: String) {
+        val sql = "COMMENT ON DOMAIN \"$schema\".\"$name\" IS '${comment.replace("'", "''")}'"
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
+
+    fun dropDomain(schema: String, name: String, cascade: Boolean) {
+        val sql = "DROP DOMAIN IF EXISTS \"$schema\".\"$name\"" + if (cascade) " CASCADE" else ""
+        logger.info("Executing type SQL: {}", sql)
+        jdbc.execute(sql)
+    }
 }

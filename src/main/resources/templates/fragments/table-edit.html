@@ -12,6 +12,13 @@
         </div>
 
         <div class="card-body">
+    <!-- Exposes the full type list (built-ins + custom enum/domain types) so JS-added rows
+         (new column / preset buttons) can offer the same options as the server-rendered rows. -->
+    <script th:inline="javascript">
+        /*<![CDATA[*/
+        window.COLUMN_TYPE_OPTIONS = /*[[${typeOptions}]]*/ [];
+        /*]]>*/
+    </script>
     <form method="post" th:action="@{/schemas/edit}" th:object="${form}">
         <input type="hidden" th:field="*{schema}">
         <input type="hidden" th:field="*{table}">
@@ -39,7 +46,7 @@
                                th:field="*{columns[__${iter.index}__].name}">
                     </td>
                     <td style="min-width: 180px;">
-                        <select class="form-select form-select-sm"
+                        <select class="form-select form-select-sm col-type-select"
                                 th:field="*{columns[__${iter.index}__].type}">
                             <option value="">-- type --</option>
                             <option th:each="t : ${typeOptions}"
@@ -570,7 +577,7 @@
                        name="columns[__INDEX__].name" value="">
             </td>
             <td style="min-width: 180px;">
-                <select class="form-select form-select-sm" name="columns[__INDEX__].type">
+                <select class="form-select form-select-sm col-type-select" name="columns[__INDEX__].type">
                     <option value="">-- type --</option>
                     <option value="integer">integer</option>
                     <option value="bigint">bigint</option>

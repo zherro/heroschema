@@ -295,6 +295,26 @@
             if (!newRow) return null;
             tbody.appendChild(newRow);
 
+            // Rebuild the type <select> options from the full server-side list (built-ins +
+            // custom enum/domain types) since the row template only has the hardcoded built-ins.
+            if (Array.isArray(window.COLUMN_TYPE_OPTIONS)) {
+                newRow.querySelectorAll('.col-type-select').forEach(function (select) {
+                    var previousValue = select.value;
+                    select.innerHTML = '';
+                    var blankOption = document.createElement('option');
+                    blankOption.value = '';
+                    blankOption.textContent = '-- type --';
+                    select.appendChild(blankOption);
+                    window.COLUMN_TYPE_OPTIONS.forEach(function (t) {
+                        var opt = document.createElement('option');
+                        opt.value = t;
+                        opt.textContent = t;
+                        select.appendChild(opt);
+                    });
+                    select.value = previousValue;
+                });
+            }
+
             if (preset) {
                 var nameInput = newRow.querySelector('input[name$=".name"]');
                 var typeSelect = newRow.querySelector('select[name$=".type"]');

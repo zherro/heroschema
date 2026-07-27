@@ -1,0 +1,86 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Custom types</h3>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-primary" th:href="@{/types/enum/new}">+ New enum</a>
+            <a class="btn btn-sm btn-primary" th:href="@{/types/domain/new}">+ New domain</a>
+        </div>
+    </div>
+
+    <form class="row g-2 mb-3" method="get" th:action="@{/types}">
+        <div class="col-auto">
+            <label class="form-label small mb-1">Schema</label>
+            <select name="schema" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="" th:selected="${selectedSchema == null}">All</option>
+                <option th:each="s : ${schemas}"
+                        th:value="${s}"
+                        th:text="${s}"
+                        th:selected="${s == selectedSchema}"></option>
+            </select>
+        </div>
+    </form>
+
+    <h5 class="mt-4">Enum types</h5>
+    <div class="table-responsive mb-4">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Schema</th>
+                <th>Name</th>
+                <th>Values</th>
+                <th>Comment</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="t : ${enumTypes}">
+                <td th:text="${t.schema}"></td>
+                <td><code th:text="${t.name}"></code></td>
+                <td th:text="${#strings.listJoin(t.values, ', ')}"></td>
+                <td th:text="${t.comment}"></td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary"
+                       th:href="@{/types/enum/edit(schema=${t.schema}, name=${t.name})}">
+                        🔧
+                    </a>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+        <p class="text-muted" th:if="${#lists.isEmpty(enumTypes)}">Nenhum tipo enum encontrado.</p>
+    </div>
+
+    <h5 class="mt-4">Domain types</h5>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Schema</th>
+                <th>Name</th>
+                <th>Base type</th>
+                <th class="text-center">Not null</th>
+                <th>Default</th>
+                <th>Check</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="t : ${domainTypes}">
+                <td th:text="${t.schema}"></td>
+                <td><code th:text="${t.name}"></code></td>
+                <td th:text="${t.baseType}"></td>
+                <td class="text-center" th:text="${t.notNull} ? '✔' : ''"></td>
+                <td th:text="${t.defaultValue}"></td>
+                <td th:text="${t.checkExpr}"></td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary"
+                       th:href="@{/types/domain/edit(schema=${t.schema}, name=${t.name})}">
+                        🔧
+                    </a>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+        <p class="text-muted" th:if="${#lists.isEmpty(domainTypes)}">Nenhum domain encontrado.</p>
+    </div>
+</div>

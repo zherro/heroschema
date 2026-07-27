@@ -194,7 +194,7 @@ class SchemaController(
         )
 
         // Common PostgreSQL column types for the type <select>
-        val typeOptions = listOf(
+        val builtinTypeOptions = listOf(
             "integer",
             "bigint",
             "smallint",
@@ -211,6 +211,16 @@ class SchemaController(
             "numeric",
             "jsonb"
         )
+        // Custom enum/domain types created via /types also show up here, schema-qualified
+        // when they live outside the table's own schema.
+        val customTypeOptions = (
+            repo.listEnumTypes().map { it.schema to it.name } +
+                repo.listDomainTypes().map { it.schema to it.name }
+            )
+            .map { (typeSchema, typeName) -> if (typeSchema == schema) typeName else "$typeSchema.$typeName" }
+            .distinct()
+            .sorted()
+        val typeOptions = builtinTypeOptions + customTypeOptions
 
         model.addAttribute("page", "schemas")
         model.addAttribute("pageTitle", "Edit table $schema.$table")

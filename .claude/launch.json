@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "heroschema-bootrun",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "X:\\workspace\\heroschema\\gradlew.bat", "bootRun"],
+      "env": {
+        "DB_URL": "jdbc:postgresql://localhost:5432/stain_db",
+        "DB_USER": "myuser",
+        "DB_PASSWORD": "mypassword"
+      },
+      "port": 8081,
+      "autoPort": true
+    }
+  ]
+}
